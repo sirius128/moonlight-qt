@@ -1,5 +1,6 @@
 #include "streamingpreferences.h"
 #include "utils.h"
+#include "streaming/audio/dualsensehaptics.h"
 
 #include <QSettings>
 #include <QTranslator>
@@ -51,6 +52,7 @@
 #define SER_CONNWARNINGS "connwarnings"
 #define SER_CONFWARNINGS "confwarnings"
 #define SER_UIDISPLAYMODE "uidisplaymode"
+#define SER_REMEMBERWINDOWPOSITION "rememberwindowposition"
 #define SER_RICHPRESENCE "richpresence"
 #define SER_GAMEPADMOUSE "gamepadmouse"
 #define SER_DEFAULTVER "defaultver"
@@ -72,7 +74,8 @@
 #define SER_LEGACY_CUSTOMVDDSCREENMODE "customvddscreenmode"
 #define SER_SHOWLOCALCURSOR "showLocalCursor"
 #define SER_MICROPHONE "microphone"
-#define SER_OVERLAYMENUPOS "overlaymenuposition"
+#define SER_OVERLAYMENUPLACEMENT "overlaymenuplacement"
+#define SER_LEGACY_OVERLAYMENUPOS "overlaymenuposition"
 #define SER_HDRMODE "hdrmode"
 #define SER_HDRBRIGHTNESSMODE "hdrbrightnessmode"
 #define SER_HDRMAXBRIGHTNESS "hdrmaxbrightness"
@@ -80,12 +83,87 @@
 #define SER_HDRMAXAVERAGEBRIGHTNESS "hdrmaxaveragebrightness"
 #define SER_AUTOUPDATECHECK "autoupdatecheck"
 #define SER_RENDERER "renderer"
+#define SER_BACKGROUNDSOURCE "backgroundsource"
+#define SER_BACKGROUNDIMAGEAPI "backgroundimageapi"
+#define SER_BACKGROUNDIMAGELOCALPATH "backgroundimagelocalpath"
+#define SER_BACKGROUNDOVERLAYOPACITY "backgroundoverlayopacity"
+#define SER_BACKGROUNDSETUPCOMPLETED "backgroundsetupcompleted"
 
 #define CURRENT_DEFAULT_VER 2
+
+static constexpr int DEFAULT_BACKGROUND_OVERLAY_OPACITY = 72;
 
 static StreamingPreferences* s_GlobalPrefs;
 
 Q_GLOBAL_STATIC(QReadWriteLock, s_GlobalPrefsLock)
+
+static StreamingPreferences::OverlayMenuPosition decodeOverlayMenuPlacement(int value)
+{
+    switch (value) {
+    case StreamingPreferences::OMP_TOP_EDGE:
+    case StreamingPreferences::OMP_RIGHT_EDGE:
+    case StreamingPreferences::OMP_LEFT_EDGE:
+    case StreamingPreferences::OMP_BUTTON:
+    case StreamingPreferences::OMP_DISABLED:
+        return static_cast<StreamingPreferences::OverlayMenuPosition>(value);
+    default:
+        return StreamingPreferences::OMP_DISABLED;
+    }
+}
+
+static StreamingPreferences::BackgroundSource decodeBackgroundSource(int value)
+{
+    switch (value) {
+    case StreamingPreferences::BGS_PHOTOGRAPHY:
+    case StreamingPreferences::BGS_ANIME:
+    case StreamingPreferences::BGS_API:
+    case StreamingPreferences::BGS_LOCAL:
+    case StreamingPreferences::BGS_NONE:
+        return static_cast<StreamingPreferences::BackgroundSource>(value);
+    default:
+        return StreamingPreferences::BGS_PHOTOGRAPHY;
+    }
+}
+
+static StreamingPreferences::OverlayMenuPosition migrateLegacyOverlayMenuPosition(int value)
+{
+    switch (value) {
+    case 0: // Right edge
+        return StreamingPreferences::OMP_RIGHT_EDGE;
+    case 1: // Left edge
+        return StreamingPreferences::OMP_LEFT_EDGE;
+    case 3: // Disabled
+        return StreamingPreferences::OMP_DISABLED;
+    case 4: // Floating button
+        return StreamingPreferences::OMP_BUTTON;
+    case 2: // Removed at-cursor mode already fell back to the right edge
+    default:
+        return StreamingPreferences::OMP_RIGHT_EDGE;
+    }
+}
+
+static StreamingPreferences::OverlayMenuPosition loadOverlayMenuPlacement(QSettings& settings)
+{
+    if (settings.contains(SER_OVERLAYMENUPLACEMENT)) {
+        settings.remove(SER_LEGACY_OVERLAYMENUPOS);
+        return decodeOverlayMenuPlacement(
+                settings.value(SER_OVERLAYMENUPLACEMENT).toInt());
+    }
+
+    if (!settings.contains(SER_LEGACY_OVERLAYMENUPOS)) {
+        return StreamingPreferences::OMP_DISABLED;
+    }
+
+    // Temporary compatibility bridge for versions that stored the old enum
+    // under overlaymenuposition. Remove this migration and the legacy key
+    // constant after support for upgrading from those versions is retired.
+    const auto migratedPosition = migrateLegacyOverlayMenuPosition(
+            settings.value(SER_LEGACY_OVERLAYMENUPOS).toInt());
+    settings.setValue(SER_OVERLAYMENUPLACEMENT,
+                      static_cast<int>(migratedPosition));
+    settings.remove(SER_LEGACY_OVERLAYMENUPOS);
+    return migratedPosition;
+}
 
 StreamingPreferences::StreamingPreferences(QQmlEngine *qmlEngine)
     : m_QmlEngine(qmlEngine)
@@ -168,7 +246,7 @@ void StreamingPreferences::reload()
     showLocalCursor = settings.value(SER_SHOWLOCALCURSOR, false).toBool();
     absoluteTouchMode = settings.value(SER_ABSTOUCHMODE, true).toBool();
     enableNativeTouchpad = settings.value(SER_NATIVETOUCHPAD, false).toBool();
-#ifdef Q_OS_WIN32
+#ifdef HAVE_PHYSICAL_DS5_HAPTICS
     constexpr auto defaultDualSenseHapticsMode = DSHM_PHYSICAL;
 #else
     constexpr auto defaultDualSenseHapticsMode = DSHM_EMULATED;
@@ -178,8 +256,7 @@ void StreamingPreferences::reload()
     if (dualSenseHapticsMode != DSHM_PHYSICAL && dualSenseHapticsMode != DSHM_EMULATED) {
         dualSenseHapticsMode = defaultDualSenseHapticsMode;
     }
-#ifndef Q_OS_WIN32
-    // Native authored PCM currently requires the Windows WASAPI renderer.
+#ifndef HAVE_PHYSICAL_DS5_HAPTICS
     // Do not retain a value that this build can neither negotiate nor render.
     if (dualSenseHapticsMode == DSHM_PHYSICAL) {
         dualSenseHapticsMode = DSHM_EMULATED;
@@ -188,8 +265,7 @@ void StreamingPreferences::reload()
     framePacing = settings.value(SER_FRAMEPACING, false).toBool();
     videoEnhancement = settings.value(SER_VIDEOENHANCEMENT, false).toBool();
     enableMicrophone = settings.value(SER_MICROPHONE, false).toBool();
-    overlayMenuPosition = static_cast<OverlayMenuPosition>(settings.value(SER_OVERLAYMENUPOS,
-                                                           static_cast<int>(OverlayMenuPosition::OMP_RIGHT_EDGE)).toInt());
+    overlayMenuPosition = loadOverlayMenuPlacement(settings);
     autoUpdateCheck = settings.value(SER_AUTOUPDATECHECK, true).toBool();
 
     streamResolutionScale = settings.value(SER_STREAMRESOLUTIONSCALE, false).toBool();
@@ -254,8 +330,23 @@ void StreamingPreferences::reload()
     uiDisplayMode = static_cast<UIDisplayMode>(settings.value(SER_UIDISPLAYMODE,
                                                static_cast<int>(settings.value(SER_STARTWINDOWED, true).toBool() ? UIDisplayMode::UI_WINDOWED
                                                                                                                  : UIDisplayMode::UI_MAXIMIZED)).toInt());
+    rememberWindowPosition = settings.value(SER_REMEMBERWINDOWPOSITION, true).toBool();
     language = static_cast<Language>(settings.value(SER_LANGUAGE,
                                                     static_cast<int>(Language::LANG_AUTO)).toInt());
+    const auto defaultBackgroundSource = defaultVer > 0 ? BGS_ANIME : BGS_PHOTOGRAPHY;
+    m_BackgroundSource = decodeBackgroundSource(settings.value(
+                                                    SER_BACKGROUNDSOURCE,
+                                                    static_cast<int>(defaultBackgroundSource)).toInt());
+    m_BackgroundImageApi = settings.value(SER_BACKGROUNDIMAGEAPI).toString().trimmed();
+    m_BackgroundImageLocalPath = settings.value(SER_BACKGROUNDIMAGELOCALPATH).toString();
+    m_BackgroundOverlayOpacity = qBound(0,
+                                        settings.value(SER_BACKGROUNDOVERLAYOPACITY,
+                                                       DEFAULT_BACKGROUND_OVERLAY_OPACITY).toInt(),
+                                        100);
+    // This marker records an explicit background choice. The general settings
+    // version cannot be used here because upgrades may never have configured a
+    // background and must receive the same one-time choice as new installs.
+    m_BackgroundSetupCompleted = settings.value(SER_BACKGROUNDSETUPCOMPLETED, false).toBool();
     int storedScreenCombinationMode;
     if (settings.contains(SER_SCREENCOMBINATIONMODE)) {
         storedScreenCombinationMode = settings.value(SER_SCREENCOMBINATIONMODE, SCM_FOLLOW_HOST).toInt();
@@ -309,6 +400,133 @@ void StreamingPreferences::reload()
     if (videoCodecConfig == VCC_FORCE_HEVC_HDR_DEPRECATED) {
         videoCodecConfig = VCC_AUTO;
         enableHdr = true;
+    }
+}
+
+void StreamingPreferences::setOverlayMenuPosition(OverlayMenuPosition position)
+{
+    if (overlayMenuPosition == position) {
+        return;
+    }
+
+    overlayMenuPosition = position;
+    emit overlayMenuPositionChanged();
+}
+
+StreamingPreferences::BackgroundSource StreamingPreferences::backgroundSource() const
+{
+    return m_BackgroundSource;
+}
+
+void StreamingPreferences::setBackgroundSource(BackgroundSource source)
+{
+    source = decodeBackgroundSource(static_cast<int>(source));
+
+    const bool setupWasCompleted = m_BackgroundSetupCompleted;
+    const bool changed = m_BackgroundSource != source;
+    m_BackgroundSource = source;
+
+    setBackgroundSetupCompleted(true);
+    if (changed || !setupWasCompleted) {
+        emit backgroundConfigurationChanged();
+    }
+}
+
+QString StreamingPreferences::backgroundImageApi() const
+{
+    return m_BackgroundImageApi;
+}
+
+void StreamingPreferences::setBackgroundImageApi(const QString &apiUrl)
+{
+    const QString normalizedUrl = apiUrl.trimmed();
+    const BackgroundSource source = normalizedUrl.isEmpty() ? BGS_PHOTOGRAPHY : BGS_API;
+    const bool setupWasCompleted = m_BackgroundSetupCompleted;
+    const bool changed = m_BackgroundImageApi != normalizedUrl ||
+                         m_BackgroundSource != source;
+
+    m_BackgroundImageApi = normalizedUrl;
+    m_BackgroundSource = source;
+
+    setBackgroundSetupCompleted(true);
+    if (changed || !setupWasCompleted) {
+        emit backgroundConfigurationChanged();
+    }
+}
+
+QString StreamingPreferences::backgroundImageLocalPath() const
+{
+    return m_BackgroundImageLocalPath;
+}
+
+void StreamingPreferences::setBackgroundImageLocalPath(const QString &path)
+{
+    const QString normalizedPath = path.trimmed();
+    const BackgroundSource source = normalizedPath.isEmpty() ? BGS_PHOTOGRAPHY : BGS_LOCAL;
+    const bool setupWasCompleted = m_BackgroundSetupCompleted;
+    const bool changed = m_BackgroundImageLocalPath != normalizedPath ||
+                         m_BackgroundSource != source;
+
+    m_BackgroundImageLocalPath = normalizedPath;
+    m_BackgroundSource = source;
+
+    setBackgroundSetupCompleted(true);
+    if (changed || !setupWasCompleted) {
+        emit backgroundConfigurationChanged();
+    }
+}
+
+int StreamingPreferences::backgroundOverlayOpacity() const
+{
+    return m_BackgroundOverlayOpacity;
+}
+
+void StreamingPreferences::setBackgroundOverlayOpacity(int opacity)
+{
+    opacity = qBound(0, opacity, 100);
+    if (m_BackgroundOverlayOpacity == opacity) {
+        return;
+    }
+
+    m_BackgroundOverlayOpacity = opacity;
+    emit backgroundOverlayOpacityChanged();
+}
+
+bool StreamingPreferences::backgroundSetupCompleted() const
+{
+    return m_BackgroundSetupCompleted;
+}
+
+void StreamingPreferences::setBackgroundSetupCompleted(bool completed)
+{
+    if (m_BackgroundSetupCompleted == completed) {
+        return;
+    }
+
+    m_BackgroundSetupCompleted = completed;
+    emit backgroundSetupCompletedChanged();
+}
+
+void StreamingPreferences::resetBackgroundConfiguration()
+{
+    const bool setupWasCompleted = m_BackgroundSetupCompleted;
+    const bool overlayOpacityChanged =
+            m_BackgroundOverlayOpacity != DEFAULT_BACKGROUND_OVERLAY_OPACITY;
+    const bool changed = m_BackgroundSource != BGS_PHOTOGRAPHY ||
+                         !m_BackgroundImageApi.isEmpty() ||
+                         !m_BackgroundImageLocalPath.isEmpty();
+
+    m_BackgroundSource = BGS_PHOTOGRAPHY;
+    m_BackgroundImageApi.clear();
+    m_BackgroundImageLocalPath.clear();
+    m_BackgroundOverlayOpacity = DEFAULT_BACKGROUND_OVERLAY_OPACITY;
+
+    setBackgroundSetupCompleted(true);
+    if (overlayOpacityChanged) {
+        emit backgroundOverlayOpacityChanged();
+    }
+    if (changed || !setupWasCompleted) {
+        emit backgroundConfigurationChanged();
     }
 }
 
@@ -489,7 +707,13 @@ void StreamingPreferences::save()
     settings.setValue(SER_RENDERER, static_cast<int>(rendererSelection));
     settings.setValue(SER_WINDOWMODE, static_cast<int>(windowMode));
     settings.setValue(SER_UIDISPLAYMODE, static_cast<int>(uiDisplayMode));
+    settings.setValue(SER_REMEMBERWINDOWPOSITION, rememberWindowPosition);
     settings.setValue(SER_LANGUAGE, static_cast<int>(language));
+    settings.setValue(SER_BACKGROUNDSOURCE, static_cast<int>(m_BackgroundSource));
+    settings.setValue(SER_BACKGROUNDIMAGEAPI, m_BackgroundImageApi);
+    settings.setValue(SER_BACKGROUNDIMAGELOCALPATH, m_BackgroundImageLocalPath);
+    settings.setValue(SER_BACKGROUNDOVERLAYOPACITY, m_BackgroundOverlayOpacity);
+    settings.setValue(SER_BACKGROUNDSETUPCOMPLETED, m_BackgroundSetupCompleted);
     settings.setValue(SER_DEFAULTVER, CURRENT_DEFAULT_VER);
     settings.setValue(SER_SWAPMOUSEBUTTONS, swapMouseButtons);
     settings.setValue(SER_SWAPWINALTKEYS, swapWinAltKeys);
@@ -504,7 +728,7 @@ void StreamingPreferences::save()
     settings.remove(SER_LEGACY_CUSTOMSCREENMODE);
     settings.remove(SER_LEGACY_CUSTOMVDDSCREENMODE);
     settings.setValue(SER_MICROPHONE, enableMicrophone);
-    settings.setValue(SER_OVERLAYMENUPOS, static_cast<int>(overlayMenuPosition));
+    settings.setValue(SER_OVERLAYMENUPLACEMENT, static_cast<int>(overlayMenuPosition));
     settings.setValue(SER_AUTOUPDATECHECK, autoUpdateCheck);
 }
 

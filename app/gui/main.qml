@@ -9,12 +9,27 @@ import AutoUpdateChecker 1.0
 import StreamingPreferences 1.0
 import SystemProperties 1.0
 import SdlGamepadKeyNavigation 1.0
+import WindowPlacement 1.0
+import WindowsWindowChrome 1.0
 
 import "theme"
 import "Brand.js" as Brand
 
 ApplicationWindow {
     property bool pollingActive: false
+    property bool revealAfterFirstFrame: false
+    property bool configurationChecksStarted: false
+    property bool initialBackgroundChoiceHandled: false
+
+    Timer {
+        id: revealFallbackTimer
+        interval: 1000
+        repeat: false
+        onTriggered: {
+            window.revealAfterFirstFrame = false
+            window.opacity = 1
+        }
+    }
 
     // Set by SettingsView to force the back operation to pop all
     // pages except the initial view. This is required when doing
@@ -22,25 +37,32 @@ ApplicationWindow {
     property bool clearOnBack: false
 
     id: window
-    title: Qt.application.displayName
+    // macOS 原生标题栏会居中显示窗口标题，和工具栏面包屑里的字标叠成双标题；
+    // 清空原生标题，让工具栏做唯一的品牌位。Windows/Linux 无此问题。
+    title: SystemProperties.isDarwin ? "" : Qt.application.displayName
     width: 1280
     height: 640
 
-    // 去掉系统标题栏的外壳：内容顶到窗口最上沿、系统不再画标题栏底色，于是下面
-    // 那条 56px 的工具栏本身就成了标题栏，整个窗口从上到下都是我们自己的配色。
-    //
-    // 仍然是一个正常的原生窗口，resize 边缘、窗口阴影和任务栏集成都由系统管理。
-    // Windows 只关闭原生 caption buttons，改由工具栏右侧的自绘按钮提供窗口操作；
-    // 没有使用 FramelessWindowHint，因此不会丢掉系统边框行为。
-    flags: Qt.Window
-           | Qt.ExpandedClientAreaHint
-           | Qt.NoTitleBarBackgroundHint
-           // Windows otherwise keeps drawing the native window icon and title
-           // over our own wordmark. CustomizeWindowHint removes those default
-           // decorations; the three caption buttons are drawn below in QML.
-           | (Qt.platform.os === "windows"
-              ? Qt.CustomizeWindowHint
-              : 0)
+    WindowPlacement {
+        id: windowPlacement
+        window: window
+        enabled: StreamingPreferences.rememberWindowPosition &&
+                 SystemProperties.hasDesktopEnvironment &&
+                 (!SystemProperties.isRunningWayland || SystemProperties.isRunningXWayland)
+    }
+
+    WindowsWindowChrome {
+        id: windowsWindowChrome
+        window: window
+        titleBar: titleDragRegion
+    }
+
+    // Windows 保留标准顶层窗口状态和系统命令，只由 WindowsWindowChrome 移除
+    // 非客户区并绘制自定义标题栏。macOS 和 Linux 保留扩展客户区，由各自窗口
+    // 系统继续处理原生标题栏行为。
+    flags: Qt.platform.os === "windows"
+           ? Qt.Window
+           : Qt.Window | Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint
 
     // 加了上面那两个 flag 之后窗口的可绘制区域顶到了最上沿，但 ApplicationWindow 仍然
     // 把 contentItem 往下缩了一个安全区（实测 macOS 上 contentItem.y = 32，正好是系统
@@ -49,6 +71,14 @@ ApplicationWindow {
     // 我们要的是「工具栏本身就是标题栏」，所以把顶层的几层都往上顶回去，一切仍然从
     // 窗口真正的顶边开始量。全屏时 contentItem.y 会变回 0，这个绑定跟着走。
     readonly property real chromeInset: contentItem.y
+
+    onFrameSwapped: {
+        if (revealAfterFirstFrame) {
+            revealAfterFirstFrame = false
+            revealFallbackTimer.stop()
+            opacity = 1
+        }
+    }
 
     // FluentWinUI3's ApplicationWindow is just "color: palette.window", and on macOS
     // that palette follows the system appearance regardless of the color scheme we
@@ -68,14 +98,55 @@ ApplicationWindow {
         SdlGamepadKeyNavigation.enable()
     }
 
+    function startConfigurationChecks() {
+        if (configurationChecksStarted) {
+            return
+        }
+        configurationChecksStarted = true
+
+        if (!runConfigChecks) {
+            return
+        }
+
+        if (SystemProperties.isWow64) {
+            wow64Dialog.open()
+        }
+
+        // Hardware acceleration and unmapped gamepads are checked asynchronously.
+        SystemProperties.hasHardwareAccelerationChanged.connect(hasHardwareAccelerationChanged)
+        SystemProperties.unmappedGamepadsChanged.connect(hasUnmappedGamepadsChanged)
+        SystemProperties.startAsyncLoad()
+    }
+
+    function commitInitialBackgroundSource(source) {
+        if (initialBackgroundChoiceHandled) {
+            return
+        }
+
+        initialBackgroundChoiceHandled = true
+        StreamingPreferences.backgroundSource = source
+        StreamingPreferences.save()
+    }
+
     Component.onCompleted: {
+        // Always fit the initial window to the current screen. When the preference
+        // is enabled, restore the last normal window geometry before showing it.
+        windowsWindowChrome.activate()
+        var startMaximized = windowPlacement.restore(
+                    StreamingPreferences.uiDisplayMode === StreamingPreferences.UI_MAXIMIZED)
+
         // Show the window according to the user's preferences
         if (SystemProperties.hasDesktopEnvironment) {
-            if (StreamingPreferences.uiDisplayMode == StreamingPreferences.UI_MAXIMIZED) {
-                window.showMaximized()
-            }
-            else if (StreamingPreferences.uiDisplayMode == StreamingPreferences.UI_FULLSCREEN) {
+            if (StreamingPreferences.uiDisplayMode === StreamingPreferences.UI_FULLSCREEN) {
                 window.showFullScreen()
+            }
+            else if (startMaximized) {
+                if (Qt.platform.os === "windows") {
+                    window.opacity = 0
+                    window.revealAfterFirstFrame = true
+                    revealFallbackTimer.start()
+                }
+                window.showMaximized()
             }
             else {
                 window.show()
@@ -84,18 +155,17 @@ ApplicationWindow {
             window.showFullScreen()
         }
 
-        // Display any modal dialogs for configuration warnings
-        if (runConfigChecks) {
-            if (SystemProperties.isWow64) {
-                wow64Dialog.open()
-            }
-
-            // Hardware acceleration and unmapped gamepads are checked asynchronously
-            SystemProperties.hasHardwareAccelerationChanged.connect(hasHardwareAccelerationChanged)
-            SystemProperties.unmappedGamepadsChanged.connect(hasUnmappedGamepadsChanged)
-            SystemProperties.startAsyncLoad()
+        // Let a fresh install choose its background before any other startup
+        // warning is opened. Existing installs and CLI launches skip this step.
+        if (runConfigChecks && !StreamingPreferences.backgroundSetupCompleted) {
+            Qt.callLater(function() { backgroundSourceDialog.open() })
+        }
+        else {
+            startConfigurationChecks()
         }
     }
+
+    onClosing: windowPlacement.flush()
 
     function hasHardwareAccelerationChanged() {
         if (!SystemProperties.hasHardwareAcceleration && StreamingPreferences.videoDecoderSelection !== StreamingPreferences.VDS_FORCE_SOFTWARE) {
@@ -157,12 +227,12 @@ ApplicationWindow {
         z: -3
     }
 
-    // 压暗壁纸，保证上层的文字和加载动画有足够对比度。用 ink 而不是纯黑，
-    // 和各页自己那层遮罩同一个底色，切页时不会有色温跳变。
+    // 压暗壁纸，保证上层内容的可读性；强度和各个自绘背景页使用同一设置。
     Rectangle {
         anchors.fill: parent
         anchors.topMargin: -window.chromeInset
-        color: Qt.rgba(Theme.ink.r, Theme.ink.g, Theme.ink.b, 0.72)
+        color: Qt.rgba(Theme.ink.r, Theme.ink.g, Theme.ink.b,
+                       StreamingPreferences.backgroundOverlayOpacity / 100.0)
         visible: window.showGlobalBackground
         z: -2
     }
@@ -397,47 +467,6 @@ ApplicationWindow {
             }
         }
 
-        // 空白处拖动整个窗口，双击最大化/还原。
-        //
-        // macOS 上走不到这里：那边把系统标题栏那条带子拉高到了整条 bar
-        // （macwindowchrome.mm），拖动和双击缩放由 AppKit 自己接管，这个 MouseArea
-        // 拿不到 bar 区域的事件。这一份是给 Windows / Linux 用的。
-        //
-        // 声明在 RowLayout 之前：同层同 z 时后声明的先拿到事件，所以按钮和字标照常
-        // 响应，只有真正空着的地方才落到这里。
-        MouseArea {
-            anchors.fill: parent
-            acceptedButtons: Qt.LeftButton
-
-            property point pressPosition
-            property bool systemMoveStarted: false
-
-            onPressed: function(mouse) {
-                pressPosition = Qt.point(mouse.x, mouse.y)
-                systemMoveStarted = false
-            }
-            onPositionChanged: function(mouse) {
-                if (!pressed || systemMoveStarted) {
-                    return
-                }
-
-                var deltaX = Math.abs(mouse.x - pressPosition.x)
-                var deltaY = Math.abs(mouse.y - pressPosition.y)
-                if (Math.max(deltaX, deltaY) >= Qt.styleHints.startDragDistance) {
-                    systemMoveStarted = true
-                    window.startSystemMove()
-                }
-            }
-            onDoubleClicked: {
-                if (window.visibility === Window.Maximized) {
-                    window.showNormal()
-                }
-                else {
-                    window.showMaximized()
-                }
-            }
-        }
-
         RowLayout {
             spacing: Theme.spaceSm
             anchors.leftMargin: Theme.spaceLg + toolBar.windowButtonInsetLeft
@@ -457,46 +486,91 @@ ApplicationWindow {
                 }
             }
 
-            // 字标 + 页名面包屑，左对齐。窄窗口下字标先让位，页名一直留着。
-            Text {
-                id: wordmark
-                visible: toolBar.width > 700
-                text: "MOONLIGHT V+ FOR PC"
-                color: Theme.text
-                font.family: Theme.fontSans
-                font.pointSize: Theme.fontCardTitle
-                font.weight: Font.ExtraBold
-                font.letterSpacing: Theme.tracking(Theme.fontCardTitle, 0.1)
-                verticalAlignment: Text.AlignVCenter
-                Layout.fillHeight: true
-            }
-
-            Text {
-                visible: wordmark.visible
-                text: "/"
-                color: Theme.textFaint
-                font.family: Theme.fontMono
-                font.pointSize: Theme.fontCardTitle
-                verticalAlignment: Text.AlignVCenter
-                Layout.fillHeight: true
-                Layout.leftMargin: Theme.spaceXs
-                Layout.rightMargin: Theme.spaceXs
-            }
-
-            // 这一条必须始终存在：RowLayout 靠它 fillWidth 把右边那排按钮推到边上。
-            Text {
-                id: titleRowLabel
-                text: stackView.currentItem ? stackView.currentItem.objectName : ""
-                color: Theme.accent
-                font.family: Theme.fontSans
-                font.pointSize: Theme.fontRowTitle
-                font.weight: Font.Bold
-                font.capitalization: Font.AllUppercase
-                font.letterSpacing: Theme.tracking(Theme.fontRowTitle, 0.14)
-                elide: Text.ElideRight
-                verticalAlignment: Text.AlignVCenter
+            // 标题区域占满工具栏中所有非按钮空间。Windows 读取这块区域做原生
+            // 非客户区命中；Linux 继续使用下面的 MouseArea；macOS 由 AppKit 接管。
+            Item {
+                id: titleDragRegion
                 Layout.fillHeight: true
                 Layout.fillWidth: true
+
+                RowLayout {
+                    anchors.fill: parent
+                    spacing: Theme.spaceSm
+
+                    Text {
+                        id: wordmark
+                        visible: toolBar.width > 700
+                        text: "MOONLIGHT V+ FOR PC"
+                        color: Theme.text
+                        font.family: Theme.fontSans
+                        font.pointSize: Theme.fontCardTitle
+                        font.weight: Font.ExtraBold
+                        font.letterSpacing: Theme.tracking(Theme.fontCardTitle, 0.1)
+                        verticalAlignment: Text.AlignVCenter
+                        Layout.fillHeight: true
+                    }
+
+                    Text {
+                        visible: wordmark.visible
+                        text: "/"
+                        color: Theme.textFaint
+                        font.family: Theme.fontMono
+                        font.pointSize: Theme.fontCardTitle
+                        verticalAlignment: Text.AlignVCenter
+                        Layout.fillHeight: true
+                        Layout.leftMargin: Theme.spaceXs
+                        Layout.rightMargin: Theme.spaceXs
+                    }
+
+                    Text {
+                        id: titleRowLabel
+                        text: stackView.currentItem ? stackView.currentItem.objectName : ""
+                        color: Theme.accent
+                        font.family: Theme.fontSans
+                        font.pointSize: Theme.fontRowTitle
+                        font.weight: Font.Bold
+                        font.capitalization: Font.AllUppercase
+                        font.letterSpacing: Theme.tracking(Theme.fontRowTitle, 0.14)
+                        elide: Text.ElideRight
+                        verticalAlignment: Text.AlignVCenter
+                        Layout.fillHeight: true
+                        Layout.fillWidth: true
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton
+                    enabled: Qt.platform.os !== "windows" && !SystemProperties.isDarwin
+
+                    property point pressPosition
+                    property bool systemMoveStarted: false
+
+                    onPressed: function(mouse) {
+                        pressPosition = Qt.point(mouse.x, mouse.y)
+                        systemMoveStarted = false
+                    }
+                    onPositionChanged: function(mouse) {
+                        if (!pressed || systemMoveStarted) {
+                            return
+                        }
+
+                        var deltaX = Math.abs(mouse.x - pressPosition.x)
+                        var deltaY = Math.abs(mouse.y - pressPosition.y)
+                        if (Math.max(deltaX, deltaY) >= Qt.styleHints.startDragDistance) {
+                            systemMoveStarted = true
+                            window.startSystemMove()
+                        }
+                    }
+                    onDoubleClicked: {
+                        if (window.visibility === Window.Maximized) {
+                            window.showNormal()
+                        }
+                        else {
+                            window.showMaximized()
+                        }
+                    }
+                }
             }
 
             Text {
@@ -714,6 +788,8 @@ ApplicationWindow {
             NavigableToolButton {
                 id: settingsButton
 
+                visible: !(stackView.currentItem instanceof SettingsView)
+
                 iconSource:  "qrc:/res/fluent/tb-settings.svg"
 
                 onClicked: navigateTo("qrc:/gui/SettingsView.qml", SettingsView)
@@ -725,6 +801,8 @@ ApplicationWindow {
                 Shortcut {
                     id: settingsShortcut
                     sequence: StandardKey.Preferences
+                    // 设置页隐藏入口时同步停用快捷键，避免重复压入 SettingsView。
+                    enabled: settingsButton.visible
                     onActivated: settingsButton.clicked()
                 }
 
@@ -740,36 +818,29 @@ ApplicationWindow {
             visible: Qt.platform.os === "windows" && toolBar.windowChromeVisible
             anchors.top: parent.top
             anchors.right: parent.right
-            height: 40
+            height: parent.height
             z: 2
 
             WindowControlButton {
                 controlType: "minimize"
                 accessibleName: qsTr("Minimize")
                 highlightColor: Theme.acid
-                onClicked: window.showMinimized()
+                onClicked: windowsWindowChrome.minimize()
             }
 
             WindowControlButton {
-                controlType: window.visibility === Window.Maximized ? "restore" : "maximize"
-                accessibleName: window.visibility === Window.Maximized
+                controlType: windowsWindowChrome.maximized ? "restore" : "maximize"
+                accessibleName: windowsWindowChrome.maximized
                                 ? qsTr("Restore") : qsTr("Maximize")
                 highlightColor: Theme.accent
-                onClicked: {
-                    if (window.visibility === Window.Maximized) {
-                        window.showNormal()
-                    }
-                    else {
-                        window.showMaximized()
-                    }
-                }
+                onClicked: windowsWindowChrome.toggleMaximized()
             }
 
             WindowControlButton {
                 controlType: "close"
                 accessibleName: qsTr("Close")
                 highlightColor: Theme.danger
-                onClicked: window.close()
+                onClicked: windowsWindowChrome.close()
             }
         }
     }
@@ -788,6 +859,26 @@ ApplicationWindow {
         closePolicy: Popup.CloseOnEscape
         showSpinner: true
         text: qsTr("Preparing update...")
+    }
+
+    BackgroundSourceDialog {
+        id: backgroundSourceDialog
+
+        onSourceChosen: function(source) {
+            window.commitInitialBackgroundSource(source)
+        }
+
+        Connections {
+            target: backgroundSourceDialog
+            function onClosed() {
+                // Escape and window-manager close mean “decide later”: keep the
+                // photography default, mark the picker handled, then continue startup.
+                if (!window.initialBackgroundChoiceHandled) {
+                    window.commitInitialBackgroundSource(StreamingPreferences.BGS_PHOTOGRAPHY)
+                }
+                window.startConfigurationChecks()
+            }
+        }
     }
 
     ErrorMessageDialog {

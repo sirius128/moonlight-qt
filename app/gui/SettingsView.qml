@@ -3,7 +3,6 @@ import QtQuick.Controls
 import QtQuick.Window 2.2
 
 import StreamingPreferences 1.0
-import ComputerManager 1.0
 import SdlGamepadKeyNavigation 1.0
 import SystemProperties 1.0
 
@@ -11,8 +10,8 @@ import "settings"
 import "theme"
 
 // 设置页外壳：左侧分类 rail + 右侧卡片内容。
-// 「基本设置」「显示」已迁移到 settings/ 下的独立页面；
-// 其余 6 组仍走旧的 GroupBox 路径（settings/LegacySettingsPage.qml），逐步迁移。
+// 「基本设置」「显示」使用独立页面；其余 6 组保留在 LegacySettingsPage.qml
+// 中以维持翻译上下文，但内部也已经迁移到卡片和设置行。
 // 根用 FocusScope 而不是 Item：工具栏的 Keys.onDownPressed 走的是
 // stackView.currentItem.forceActiveFocus()，落在普通 Item 上会停在一个看不见的
 // 死点上（PcView / AppView 是 GridView + activeFocusOnTab，所以没这问题）。
@@ -37,10 +36,12 @@ FocusScope {
         { key: "display",  icon: "qrc:/res/fluent/cat-display.svg",  title: qsTr("Display Settings") },
         { key: "audio",    icon: "qrc:/res/fluent/cat-audio.svg",    title: qsTr("Audio Settings") },
         { key: "host",     icon: "qrc:/res/fluent/cat-host.svg",     title: qsTr("Host Settings") },
-        { key: "ui",       icon: "qrc:/res/fluent/cat-ui.svg",       title: qsTr("UI Settings") },
         { key: "input",    icon: "qrc:/res/fluent/cat-input.svg",    title: qsTr("Input Settings") },
         { key: "gamepad",  icon: "qrc:/res/fluent/cat-gamepad.svg",  title: qsTr("Gamepad Settings") },
-        { key: "advanced", icon: "qrc:/res/fluent/cat-advanced.svg", title: qsTr("Advanced Settings") }
+        { key: "advanced", icon: "qrc:/res/fluent/cat-advanced.svg", title: qsTr("Advanced Settings") },
+        { key: "ui",       icon: "qrc:/res/fluent/cat-ui.svg",       title: qsTr("Software Settings") },
+        { key: "ecosystem",icon: "qrc:/res/fluent/cat-ecosystem.svg",title: qsTr("AlkaidLab Ecosystem") },
+        { key: "about",    icon: "qrc:/res/fluent/cat-about.svg",    title: qsTr("About") }
     ]
 
     StackView.onActivated: {
@@ -102,7 +103,7 @@ FocusScope {
     }
 
     // 手柄 LB/RB 映射成 PageUp/PageDown，用来切分类
-    Keys.onPressed: {
+    Keys.onPressed: function(event) {
         if (event.key === Qt.Key_PageUp) {
             rail.step(-1)
             // 切完分类要把焦点收回分类栏：原来持焦的控件已经随着旧分类隐藏了，
@@ -121,19 +122,19 @@ FocusScope {
     // hidden PcView here duplicated its model, network work, and scene graph.
     Image {
         anchors.fill: parent
+        visible: StreamingPreferences.backgroundSource !== StreamingPreferences.BGS_NONE
         source: Window.window && Window.window.backgroundImageUrl !== ""
                 ? Window.window.backgroundImageUrl
                 : "qrc:/res/gura.png"
-        opacity: 0.35
         fillMode: Image.PreserveAspectCrop
         z: -2
     }
 
     Rectangle {
         anchors.fill: parent
-        // 只做一点点补压：全局壁纸遮罩（main.qml 里的 60% 黑）已经压过一次了，
-        // 这里再叠满会糊成一团，所以这层只负责把色调拉回 --background-darker。
-        color: Qt.rgba(0.059, 0.090, 0.165, 0.25)
+        visible: StreamingPreferences.backgroundSource !== StreamingPreferences.BGS_NONE
+        color: Qt.rgba(Theme.ink.r, Theme.ink.g, Theme.ink.b,
+                       StreamingPreferences.backgroundOverlayOpacity / 100.0)
         z: -1
     }
 
@@ -175,7 +176,7 @@ FocusScope {
                 compact: settingsPage.compact
                 categories: settingsPage.categories
                 currentCategory: settingsPage.category
-                onCategoryPicked: {
+                onCategoryPicked: function(category) {
                     settingsPage.category = category
                     scrollArea.contentY = 0
                 }
@@ -218,16 +219,34 @@ FocusScope {
                 category: settingsPage.category
 
                 onLanguageChanged: settingsPage.languageChanged()
+                onBitratePreferenceChanged: basicPage.syncBitrateFromPreferences()
+            }
+
+            EcosystemSettingsPage {
+                id: ecosystemPage
+                y: basicPage.height + displayPage.height + legacyPage.height
+                width: parent.width
+                visible: settingsPage.category === "ecosystem"
+                height: visible ? implicitHeight : 0
+                onAboutRequested: {
+                    settingsPage.category = "about"
+                    rail.focusCurrent()
+                    scrollArea.contentY = 0
+                }
+            }
+
+            AboutSettingsPage {
+                id: aboutPage
+                y: basicPage.height + displayPage.height + legacyPage.height + ecosystemPage.height
+                width: parent.width
+                visible: settingsPage.category === "about"
+                height: visible ? implicitHeight : 0
+                onScrollToEndRequested: scrollArea.scrollToEnd()
             }
         }
     }
 
     Component.onCompleted: {
-        // 高级设置组会回写码率滑条、被解码器下拉联动的画质增强开关，
-        // 这两个控件现在住在基本设置页里，启动时注入进去。
-        legacyPage.bitrateSlider = basicPage.bitrateSlider
-        legacyPage.videoEnhancementCheck = basicPage.videoEnhancementCheck
-
         // 语言切换需要重建若干下拉的模型
         settingsPage.languageChanged.connect(basicPage.languageChanged)
         settingsPage.languageChanged.connect(displayPage.languageChanged)

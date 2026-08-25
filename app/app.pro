@@ -179,6 +179,23 @@ win32:!winrt {
 
     CONFIG += discord-rpc
 }
+
+# Developer-only streaming diagnostics. The implementation and menu entries are
+# omitted unless the build environment explicitly enables them.
+MOONLIGHT_FUNCTION_TESTS_ENABLED = $$(MOONLIGHT_ENABLE_FUNCTION_TESTS)
+win32:!winrt:equals(MOONLIGHT_FUNCTION_TESTS_ENABLED, 1) {
+    DEFINES += MOONLIGHT_ENABLE_FUNCTION_TESTS
+    LIBS += comdlg32.lib
+    SOURCES += \
+        streaming/input/stylusreplay.cpp \
+        streaming/input/stylusreplaytest.cpp \
+        streaming/video/stylusreplaypanel.cpp
+    HEADERS += \
+        streaming/input/stylusreplay.h \
+        streaming/input/stylusreplaytest.h \
+        streaming/video/stylusreplaypanel.h
+}
+
 macx {
     DEFINES += HAVE_MACOS_NATIVE_TOUCHPAD
 
@@ -213,6 +230,7 @@ SOURCES += \
     cli/quitstream.cpp \
     cli/startstream.cpp \
     settings/compatfetcher.cpp \
+    settings/devicelocalsettings.cpp \
     settings/mappingfetcher.cpp \
     settings/streamingpreferences.cpp \
     streaming/input/abstouch.cpp \
@@ -244,8 +262,12 @@ SOURCES += \
     path.cpp \
     settings/mappingmanager.cpp \
     gui/sdlgamepadkeynavigation.cpp \
+    gui/windowplacement.cpp \
+    gui/windowsdisplaygeometry.cpp \
+    gui/windowswindowchrome.cpp \
     streaming/video/overlaymanager.cpp \
     streaming/video/overlaymenupanel.cpp \
+    streaming/video/overlaybuttonposition.cpp \
     streaming/video/overlaymenubutton.cpp \
     streaming/video/overlaytoast.cpp \
     backend/systemproperties.cpp \
@@ -259,6 +281,7 @@ HEADERS += \
     backend/nvapp.h \
     cli/pair.h \
     settings/compatfetcher.h \
+    settings/devicelocalsettings.h \
     settings/mappingfetcher.h \
     streaming/video/videoenhancement.h \
     utils.h \
@@ -276,6 +299,7 @@ HEADERS += \
     cli/startstream.h \
     settings/streamingpreferences.h \
     streaming/input/cursorshapeclassifier.h \
+    streaming/input/penhistory.h \
     streaming/input/input.h \
     streaming/session.h \
     streaming/filemappingclient.h \
@@ -300,8 +324,12 @@ HEADERS += \
     path.h \
     settings/mappingmanager.h \
     gui/sdlgamepadkeynavigation.h \
+    gui/windowplacement.h \
+    gui/windowsdisplaygeometry.h \
+    gui/windowswindowchrome.h \
     streaming/video/overlaymanager.h \
     streaming/video/overlaymenupanel.h \
+    streaming/video/overlaybuttonposition.h \
     streaming/video/overlaymenubutton.h \
     streaming/video/overlaytoast.h \
     backend/systemproperties.h \

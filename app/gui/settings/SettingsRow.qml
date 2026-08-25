@@ -1,7 +1,5 @@
 import QtQuick 2.9
-import QtQuick.Controls
 import QtQuick.Layouts 1.3
-import "."
 import "../theme"
 
 // 一行设置：左边标题 + 说明，右边控件。
@@ -12,15 +10,18 @@ FocusScope {
 
     property string title: ""
     property string description: ""
+    property real descriptionFontPointSize: Theme.fontSettingsSubtitle
     // 业务上是否该显示这一行（例如某功能在当前平台不可用）
     property bool applicable: true
+    readonly property bool stacked: width < Theme.settingsRowStackBreakpoint
+    readonly property bool hoverable: controlSlot.children.length > 0
 
     default property alias controlContent: controlSlot.data
 
     width: parent ? parent.width : 0
     visible: applicable
     height: visible ? implicitHeight : 0
-    implicitHeight: Math.max(textColumn.implicitHeight, controlSlot.implicitHeight) + Theme.spaceMd * 2
+    implicitHeight: contentLayout.implicitHeight + Theme.spaceMd * 2
 
     // 行背景：方角，hover 时填 surface2；焦点落进这一行时填 surface2 并在左边
     // 立一条 accent 粗条。
@@ -32,7 +33,8 @@ FocusScope {
     Rectangle {
         anchors.fill: parent
         radius: 0
-        color: (hoverArea.containsMouse || row.activeFocus) ? Theme.surface2 : "transparent"
+        color: ((row.hoverable && hoverArea.containsMouse) || row.activeFocus)
+               ? Theme.surface2 : "transparent"
         border.width: 0
 
         Rectangle {
@@ -72,7 +74,9 @@ FocusScope {
         acceptedButtons: Qt.NoButton
     }
 
-    RowLayout {
+    GridLayout {
+        id: contentLayout
+
         anchors {
             fill: parent
             leftMargin: Theme.spaceMd
@@ -80,7 +84,9 @@ FocusScope {
             topMargin: Theme.spaceMd
             bottomMargin: Theme.spaceMd
         }
-        spacing: Theme.spaceLg
+        columns: row.stacked ? 1 : 2
+        columnSpacing: Theme.spaceLg
+        rowSpacing: row.stacked ? Theme.spaceSm : 0
 
         Column {
             id: textColumn
@@ -103,9 +109,10 @@ FocusScope {
                 width: parent.width
                 text: row.description
                 visible: text !== ""
-                color: Theme.textDim
-                font.family: Theme.fontMono
-                font.pointSize: Theme.fontCaption
+                color: Theme.textSettingsSubtitle
+                font.family: Theme.fontSans
+                font.pointSize: row.descriptionFontPointSize
+                font.weight: Font.Medium
                 wrapMode: Text.Wrap
             }
         }

@@ -879,6 +879,49 @@
         <source>Unable to decode background image</source>
         <translation>无法解码背景图片</translation>
     </message>
+    <message>
+        <source>Only local image files can be used as backgrounds</source>
+        <translation>只能使用本地图片文件作为背景</translation>
+    </message>
+    <message>
+        <source>The selected image file is unavailable</source>
+        <translation>选择的图片文件不存在或无法读取</translation>
+    </message>
+    <message>
+        <source>Unsupported image format</source>
+        <translation>不支持的图片格式</translation>
+    </message>
+    <message>
+        <source>Unable to decode the selected image</source>
+        <translation>无法识别或读取选择的图片</translation>
+    </message>
+</context>
+<context>
+    <name>BackgroundSourceDialog</name>
+    <message>
+        <source>Choose a background style</source>
+        <translation>选择背景风格</translation>
+    </message>
+    <message>
+        <source>Photography</source>
+        <translation>摄影风景</translation>
+    </message>
+    <message>
+        <source>Anime</source>
+        <translation>二次元</translation>
+    </message>
+    <message>
+        <source>No background</source>
+        <translation>不显示背景</translation>
+    </message>
+    <message>
+        <source>Choose the style of random backgrounds shown on the computer list. You can change this at any time in Software Settings.</source>
+        <translation>选一种电脑列表随机背景的风格吧，之后可以随时在软件设置中调整。</translation>
+    </message>
+    <message>
+        <source>Decide later</source>
+        <translation>以后再说</translation>
+    </message>
 </context>
 <context>
     <name>LegacySettingsPage</name>
@@ -952,8 +995,8 @@
     </message>
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="553"/>
-        <source>Disabled</source>
-        <translation>无操作</translation>
+        <source>Disabled (default)</source>
+        <translation>禁用（默认）</translation>
     </message>
     <message>
         <source>Activate the display automatically</source>
@@ -1018,8 +1061,8 @@
     </message>
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="205"/>
-        <source>UI Settings</source>
-        <translation>界面设置</translation>
+        <source>Software Settings</source>
+        <translation>软件设置</translation>
     </message>
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="214"/>
@@ -1038,8 +1081,12 @@
     </message>
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="392"/>
-        <source>GUI display mode</source>
+        <source>Window display mode</source>
         <translation>窗口显示模式</translation>
+    </message>
+    <message>
+        <source>Choose how Moonlight opens when the application starts.</source>
+        <translation>选择Moonlight启动时使用窗口化、最大化或全屏显示。</translation>
     </message>
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="427"/>
@@ -1055,6 +1102,99 @@
         <location filename="../gui/settings/LegacySettingsPage.qml" line="435"/>
         <source>Fullscreen</source>
         <translation>全屏</translation>
+    </message>
+    <message>
+        <location filename="../gui/settings/LegacySettingsPage.qml" line="448"/>
+        <source>Remember window position and size</source>
+        <translation>记住窗口位置和大小</translation>
+    </message>
+    <message>
+        <source>Restore the previous window position and size the next time Moonlight starts.</source>
+        <translation>下次启动Moonlight时恢复上次使用的窗口位置和大小。</translation>
+    </message>
+    <message>
+        <source>Background image</source>
+        <translation>背景图片</translation>
+    </message>
+    <message>
+        <source>Choose the background shown on the computer list and shared application pages.</source>
+        <translation>设置电脑列表以及共用页面显示的背景图片。</translation>
+    </message>
+    <message>
+        <source>Background source</source>
+        <translation>背景图片来源</translation>
+    </message>
+    <message>
+        <source>Choose photography, Anime, a custom API, a local image, or no background.</source>
+        <translation>选择摄影风景、二次元、自定义API、本地图片或不显示背景。</translation>
+    </message>
+    <message>
+        <source>Photography (Lorem Picsum)</source>
+        <translation>摄影风景（Lorem Picsum）</translation>
+    </message>
+    <message>
+        <source>Anime (Pipw)</source>
+        <translation>二次元（Pipw）</translation>
+    </message>
+    <message>
+        <source>Custom API</source>
+        <translation>自定义API</translation>
+    </message>
+    <message>
+        <source>Local image</source>
+        <translation>本地图片</translation>
+    </message>
+    <message>
+        <source>No background</source>
+        <translation>不显示背景</translation>
+    </message>
+    <message>
+        <source>Background overlay opacity</source>
+        <translation>背景遮罩透明度</translation>
+    </message>
+    <message>
+        <source>Adjust the opacity of the dark overlay on background images. 0% keeps the image clear; 100% makes it fully dark.</source>
+        <translation>调整背景图片上方的深色遮罩。0%保持原图亮度，100%完全压暗。</translation>
+    </message>
+    <message>
+        <source>Background image API</source>
+        <translation>背景图片API</translation>
+    </message>
+    <message>
+        <source>Enter an image API or a direct image URL. Leaving it empty restores Photography.</source>
+        <translation>输入图片API或单张图片地址，留空将恢复为摄影风景。</translation>
+    </message>
+    <message>
+        <source>Local background image</source>
+        <translation>本地背景图片</translation>
+    </message>
+    <message>
+        <source>Choose a JPG, PNG, WebP, or BMP image. You can also drag one image onto the computer list to replace the background.</source>
+        <translation>选择JPG、PNG、WebP或BMP图片，也可以将一张图片拖入电脑列表直接替换背景。</translation>
+    </message>
+    <message>
+        <source>Choose image</source>
+        <translation>选择图片</translation>
+    </message>
+    <message>
+        <source>Restore default background</source>
+        <translation>恢复默认背景</translation>
+    </message>
+    <message>
+        <source>Clear the custom API and local image, then return to Photography.</source>
+        <translation>清除自定义API和本地图片，并恢复为摄影风景。</translation>
+    </message>
+    <message>
+        <source>Restore default</source>
+        <translation>恢复默认</translation>
+    </message>
+    <message>
+        <source>Choose a background image</source>
+        <translation>选择背景图片</translation>
+    </message>
+    <message>
+        <source>Image files (*.jpg *.jpeg *.png *.webp *.bmp)</source>
+        <translation>图片文件（*.jpg *.jpeg *.png *.webp *.bmp）</translation>
     </message>
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="448"/>
@@ -1099,12 +1239,17 @@
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="518"/>
         <source>Overlay menu position</source>
-        <translation>覆盖菜单位置</translation>
+        <translation>悬浮菜单位置</translation>
+    </message>
+    <message>
+        <location filename="../gui/settings/LegacySettingsPage.qml" line="505"/>
+        <source>Top edge</source>
+        <translation>顶部边缘</translation>
     </message>
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="541"/>
-        <source>Right edge (default)</source>
-        <translation>右侧边缘（默认）</translation>
+        <source>Right edge</source>
+        <translation>右侧边缘</translation>
     </message>
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="545"/>
@@ -1114,7 +1259,7 @@
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="549"/>
         <source>Floating button</source>
-        <translation>浮动按钮</translation>
+        <translation>悬浮按钮</translation>
     </message>
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="569"/>
@@ -1162,6 +1307,11 @@
         <translation>捕获系统快捷键</translation>
     </message>
     <message>
+        <location filename="../gui/settings/LegacySettingsPage.qml" line="295"/>
+        <source>Capture mode</source>
+        <translation>捕获模式</translation>
+    </message>
+    <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="627"/>
         <source>This enables the capture of system-wide keyboard shortcuts like Alt+Tab that would normally be handled by the client OS while streaming.</source>
         <translation>这样可以捕获系统范围的键盘快捷键，例如 Alt + Tab，这些快捷键通常在流式传输时由客户端系统处理。</translation>
@@ -1204,27 +1354,27 @@
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="727"/>
         <source>DualSense haptics</source>
-        <translation type="unfinished"></translation>
+        <translation>DualSense 触觉反馈</translation>
     </message>
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="739"/>
         <source>Physical DualSense (native HD haptics)</source>
-        <translation type="unfinished"></translation>
+        <translation>实体 DualSense（原生高清触觉反馈）</translation>
     </message>
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="743"/>
         <source>Simulated DualSense (analyzed vibration)</source>
-        <translation type="unfinished"></translation>
+        <translation>模拟 DualSense（分析后的振动）</translation>
     </message>
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="767"/>
         <source>Sends the original authored PCM to channels 3 and 4 of a USB-connected DualSense. The endpoint is checked before connecting. Changes apply to the next stream.</source>
-        <translation type="unfinished"></translation>
+        <translation>将原始触觉 PCM 数据发送到通过 USB 连接的 DualSense 第 3 和第 4 声道。连接前会检查音频端点。更改将在下次串流时生效。</translation>
     </message>
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="768"/>
         <source>Receives a compact analyzed haptics signal and renders it through the connected controller&apos;s vibration motors. Changes apply to the next stream.</source>
-        <translation type="unfinished"></translation>
+        <translation>接收经过分析的精简触觉信号，并通过已连接控制器的振动马达提供反馈。更改将在下次串流时生效。</translation>
     </message>
     <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="776"/>
@@ -1428,6 +1578,46 @@
         <source>The performance overlay is not supported on Steam Link or Raspberry Pi.</source>
         <translation>Steam链接或树莓派不支持性能覆盖。</translation>
     </message>
+    <message>
+        <location filename="../gui/settings/LegacySettingsPage.qml" line="179"/>
+        <source>Notifications and integrations</source>
+        <translation>通知与集成</translation>
+    </message>
+    <message>
+        <location filename="../gui/settings/LegacySettingsPage.qml" line="237"/>
+        <source>Mouse</source>
+        <translation>鼠标</translation>
+    </message>
+    <message>
+        <location filename="../gui/settings/LegacySettingsPage.qml" line="277"/>
+        <source>Keyboard</source>
+        <translation>键盘</translation>
+    </message>
+    <message>
+        <location filename="../gui/settings/LegacySettingsPage.qml" line="296"/>
+        <source>Choose when system keyboard shortcuts are captured.</source>
+        <translation>选择何时捕获系统键盘快捷键。</translation>
+    </message>
+    <message>
+        <location filename="../gui/settings/LegacySettingsPage.qml" line="315"/>
+        <source>Touch input</source>
+        <translation>触摸输入</translation>
+    </message>
+    <message>
+        <location filename="../gui/settings/LegacySettingsPage.qml" line="413"/>
+        <source>Video pipeline</source>
+        <translation>视频处理</translation>
+    </message>
+    <message>
+        <location filename="../gui/settings/LegacySettingsPage.qml" line="478"/>
+        <source>Network</source>
+        <translation>网络</translation>
+    </message>
+    <message>
+        <location filename="../gui/settings/LegacySettingsPage.qml" line="505"/>
+        <source>Diagnostics</source>
+        <translation>诊断</translation>
+    </message>
 </context>
 <context>
     <name>NvHTTP</name>
@@ -1439,6 +1629,42 @@
 </context>
 <context>
     <name>OverlayMenuPanel</name>
+    <message>
+        <location filename="../streaming/video/overlaymenupanel.cpp" line="159"/>
+        <source>Overlay Menu</source>
+        <translation>悬浮菜单</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/overlaymenupanel.cpp" line="162"/>
+        <location filename="../streaming/video/overlaymenupanel.cpp" line="227"/>
+        <source>Menu Position</source>
+        <translation>菜单位置</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/overlaymenupanel.cpp" line="228"/>
+        <source>Top edge</source>
+        <translation>顶部边缘</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/overlaymenupanel.cpp" line="230"/>
+        <source>Right edge</source>
+        <translation>右侧边缘</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/overlaymenupanel.cpp" line="232"/>
+        <source>Left edge</source>
+        <translation>左侧边缘</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/overlaymenupanel.cpp" line="234"/>
+        <source>Floating button</source>
+        <translation>悬浮按钮</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/overlaymenupanel.cpp" line="236"/>
+        <source>Disabled</source>
+        <translation>禁用</translation>
+    </message>
     <message>
         <location filename="../streaming/video/overlaymenupanel.cpp" line="19"/>
         <source>Checking</source>
@@ -1560,6 +1786,71 @@
         <location filename="../streaming/video/overlaymenupanel.cpp" line="205"/>
         <source>100 Mbps</source>
         <translation>100 Mbps</translation>
+    </message>
+    <message>
+        <source>Function Tests</source>
+        <translation>功能测试</translation>
+    </message>
+    <message>
+        <source>Developer</source>
+        <translation>开发功能</translation>
+    </message>
+</context>
+<context>
+    <name>StylusReplayPanel</name>
+    <message>
+        <location filename="../streaming/video/stylusreplaypanel.cpp" line="52"/>
+        <source>No recording</source>
+        <translation>未选择录制文件</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/stylusreplaypanel.cpp" line="59"/>
+        <source>Stylus Test</source>
+        <translation>手写笔测试</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/stylusreplaypanel.cpp" line="59"/>
+        <source>Function Tests</source>
+        <translation>功能测试</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/stylusreplaypanel.cpp" line="259"/>
+        <source>Recording</source>
+        <translation>录制文件</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/stylusreplaypanel.cpp" line="264"/>
+        <source>The connected host does not support stylus input.</source>
+        <translation>当前主机不支持手写笔输入。</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/stylusreplaypanel.cpp" line="288"/>
+        <source>Choose Recording</source>
+        <translation>选择录制文件</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/stylusreplaypanel.cpp" line="289"/>
+        <source>Start Replay</source>
+        <translation>开始回放</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/stylusreplaypanel.cpp" line="290"/>
+        <source>Stop Replay</source>
+        <translation>停止回放</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/stylusreplaypanel.cpp" line="295"/>
+        <source>Playback Speed</source>
+        <translation>回放速度</translation>
+    </message>
+    <message>
+        <location filename="../streaming/video/stylusreplaypanel.cpp" line="305"/>
+        <source>Press Esc to close</source>
+        <translation>按 Esc 关闭</translation>
+    </message>
+    <message>
+        <source>Filter Local Mouse Input During Replay</source>
+        <translation>回放期间过滤本地鼠标输入</translation>
     </message>
 </context>
 <context>
@@ -1713,6 +2004,18 @@
         <location filename="../gui/PcView.qml" line="551"/>
         <source>Enter the new name for this PC:</source>
         <translation>输入这台计算机的新名称:</translation>
+    </message>
+    <message>
+        <source>The local background could not be loaded. Photography has been restored.</source>
+        <translation>无法加载本地背景，已恢复为摄影风景。</translation>
+    </message>
+    <message>
+        <source>Photography has been restored.</source>
+        <translation>已恢复为摄影风景。</translation>
+    </message>
+    <message>
+        <source>Drop one local image at a time.</source>
+        <translation>每次只能拖入一张本地图片。</translation>
     </message>
     <message>
         <location filename="../gui/PcView.qml" line="747"/>
@@ -2629,17 +2932,147 @@
     <message>
         <location filename="../streaming/session.cpp" line="3345"/>
         <source>Physical DualSense haptics was selected, but no active USB DualSense four-channel audio endpoint was found yet. Moonlight will keep checking during this stream.</source>
-        <translation type="unfinished"></translation>
+        <translation>已选择实体 DualSense 触觉反馈，但尚未发现活动的 USB DualSense 四声道音频端点。Moonlight 将在本次串流期间继续检测。</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="3348"/>
         <source>Physical DualSense haptics is only available on Windows in this build.</source>
-        <translation type="unfinished"></translation>
+        <translation>此版本仅在 Windows 上支持实体 DualSense 触觉反馈。</translation>
     </message>
     <message>
         <location filename="../streaming/session.cpp" line="4143"/>
         <source>Unable to initialize video decoder. Please check your streaming settings and try again.</source>
         <translation>无法初始化视频解码器。请检查你的流式传输设置，然后重试。</translation>
+    </message>
+</context>
+<context>
+    <name>StylusReplayTest</name>
+    <message>
+        <source>Stop stylus replay before importing another recording.</source>
+        <translation>请先停止手写笔回放，再导入其他录制文件。</translation>
+    </message>
+    <message>
+        <source>The connected host does not support stylus input.</source>
+        <translation>当前连接的主机不支持手写笔输入。</translation>
+    </message>
+    <message>
+        <source>Stylus replay is already running.</source>
+        <translation>手写笔回放已经在运行。</translation>
+    </message>
+    <message>
+        <source>The stylus input queue is not available.</source>
+        <translation>手写笔输入队列当前不可用。</translation>
+    </message>
+    <message>
+        <source>Stylus replay stopped.</source>
+        <translation>手写笔回放已停止。</translation>
+    </message>
+    <message>
+        <source>Stylus replay completed.</source>
+        <translation>手写笔回放已完成。</translation>
+    </message>
+    <message>
+        <source>Stylus replay stopped because the input queue rejected an event.</source>
+        <translation>输入队列拒绝了事件，手写笔回放已停止。</translation>
+    </message>
+    <message>
+        <source>No recording</source>
+        <translation>未导入录制文件</translation>
+    </message>
+    <message>
+        <source>%1 samples · %2 s</source>
+        <translation>%1 个样本 · %2 秒</translation>
+    </message>
+    <message>
+        <source>No recording was selected.</source>
+        <translation>未选择录制文件。</translation>
+    </message>
+    <message>
+        <source>Replaying %1 at %2x: %3 samples, %4 seconds</source>
+        <translation>正在以 %2 倍速回放 %1：%3 个样本，源时长 %4 秒</translation>
+    </message>
+    <message>
+        <source>Stylus recording loaded: %1 samples, %2 seconds</source>
+        <translation>已载入手写笔录制：%1 个样本，时长 %2 秒</translation>
+    </message>
+    <message>
+        <source>%1% · %2 s left</source>
+        <translation>%1% · 剩余 %2 秒</translation>
+    </message>
+    <message>
+        <source> (source recording is truncated)</source>
+        <translation>（源录制文件已截断）</translation>
+    </message>
+    <message>
+        <source>Unable to import stylus recording: %1</source>
+        <translation>无法导入手写笔录制文件：%1</translation>
+    </message>
+    <message>
+        <source>Unable to open the recording picker (error %1)</source>
+        <translation>无法打开录制文件选择窗口（错误 %1）</translation>
+    </message>
+    <message>
+        <source>Stylus recording files (*.dat)</source>
+        <translation>手写笔录制文件 (*.dat)</translation>
+    </message>
+    <message>
+        <source>All files (*.*)</source>
+        <translation>所有文件 (*.*)</translation>
+    </message>
+    <message>
+        <source>Import stylus recording file</source>
+        <translation>导入手写笔录制文件</translation>
+    </message>
+</context>
+<context>
+    <name>StylusReplayController</name>
+    <message>
+        <source>The recording file does not exist.</source>
+        <translation>录制文件不存在。</translation>
+    </message>
+    <message>
+        <source>The recording file exceeds the 64 MiB limit.</source>
+        <translation>录制文件超过 64 MiB 上限。</translation>
+    </message>
+    <message>
+        <source>The recording file could not be opened.</source>
+        <translation>无法打开录制文件。</translation>
+    </message>
+    <message>
+        <source>This is not a supported stylus recording.</source>
+        <translation>这不是受支持的手写笔录制文件。</translation>
+    </message>
+    <message>
+        <source>Line %1 has an invalid format.</source>
+        <translation>第 %1 行格式无效。</translation>
+    </message>
+    <message>
+        <source>Line %1 contains a value outside the supported range.</source>
+        <translation>第 %1 行包含超出支持范围的值。</translation>
+    </message>
+    <message>
+        <source>Line %1 has a timestamp earlier than the previous sample.</source>
+        <translation>第 %1 行的时间戳早于前一个样本。</translation>
+    </message>
+    <message>
+        <source>The recording exceeds the 200000 sample limit.</source>
+        <translation>录制文件超过 200000 个样本的上限。</translation>
+    </message>
+    <message>
+        <source>An error occurred while reading the recording file.</source>
+        <translation>读取录制文件时发生错误。</translation>
+    </message>
+    <message>
+        <source>The recording file does not contain stylus samples.</source>
+        <translation>录制文件不包含手写笔样本。</translation>
+    </message>
+    <message>
+        <source>Import a stylus recording before starting replay.</source>
+        <translation>请先导入手写笔录制文件再开始回放。</translation>
+    </message>
+    <message>
+        <source>The selected replay speed is not supported.</source>
+        <translation>不支持所选的回放速度。</translation>
     </message>
 </context>
 <context>
@@ -2666,8 +3099,8 @@
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="40"/>
-        <source>UI Settings</source>
-        <translation>界面设置</translation>
+        <source>Software Settings</source>
+        <translation>软件设置</translation>
     </message>
     <message>
         <location filename="../gui/SettingsView.qml" line="41"/>
@@ -2688,6 +3121,528 @@
         <location filename="../gui/SettingsView.qml" line="43"/>
         <source>Advanced Settings</source>
         <translation>高级设置</translation>
+    </message>
+    <message>
+        <location filename="../gui/SettingsView.qml" line="43"/>
+        <source>AlkaidLab Ecosystem</source>
+        <translation>基地生态</translation>
+    </message>
+    <message>
+        <location filename="../gui/SettingsView.qml" line="44"/>
+        <source>About</source>
+        <translation>关于</translation>
+    </message>
+</context>
+<context>
+    <name>EcosystemSettingsPage</name>
+    <message>
+        <source>About AlkaidLab Open Source Community</source>
+        <translation>关于基地开源社区</translation>
+    </message>
+    <message>
+        <source>Built around</source>
+        <translation>围绕</translation>
+    </message>
+    <message>
+        <source>to combine low-latency streaming, precise synchronization, and comprehensive HDR presentation.</source>
+        <translation>构建低延迟串流、精准同步与完整HDR呈现。</translation>
+    </message>
+    <message>
+        <source>Connect</source>
+        <translation>串联</translation>
+    </message>
+    <message>
+        <source>into one input path for gaming, creation, and remote control.</source>
+        <translation>形成面向游戏、创作与远程控制的一体化输入链路。</translation>
+    </message>
+    <message>
+        <source>Bring together</source>
+        <translation>汇聚</translation>
+    </message>
+    <message>
+        <source>to extend streaming from entertainment to creation and collaboration.</source>
+        <translation>让串流从娱乐延伸到创作与协作。</translation>
+    </message>
+</context>
+<context>
+    <name>AboutSettingsPage</name>
+    <message>
+        <source>About</source>
+        <translation>关于</translation>
+    </message>
+    <message>
+        <source>AlkaidLab Open Source Community</source>
+        <translation>基地开源社区</translation>
+    </message>
+    <message>
+        <source>Founded in 2024, AlkaidLab has brought together tens of thousands of users and maintained in-depth dialogue with thousands of them. Guided by extensive real-world feedback, we have developed a systematic understanding of networking and streaming as a whole and built a complete solution spanning video, audio, touch, controllers, networking, and multi-device experiences, with continuous improvements ahead. The ecosystem covers desktop PCs, Android handhelds, Windows handhelds, TVs and set-top boxes, projectors, VR devices, and more, aiming to deliver a more elegant and uncompromising streaming experience for gaming, media, creation, and remote collaboration.</source>
+        <translation>基地开源社区成立于2024年，已汇聚数万名用户，并与数千名用户保持深入交流。基于大量真实反馈，我们已经形成对网络与串流全貌的系统认知，构建覆盖画面、音频、触控、手柄、网络与多终端场景的完整解决方案，并将持续优化。基地生态覆盖桌面电脑、安卓掌机、Windows掌机、电视与电视盒子、投影仪、VR设备等终端，致力于为游戏、影音、创作和远程协作带来更优雅、更极致的串流体验。</translation>
+    </message>
+    <message>
+        <source>Version %1</source>
+        <translation>版本 %1</translation>
+    </message>
+    <message>
+        <source>Website</source>
+        <translation>官网</translation>
+    </message>
+    <message>
+        <source>Bilibili</source>
+        <translation>B站</translation>
+    </message>
+    <message>
+        <source>QQ Group</source>
+        <translation>QQ群</translation>
+    </message>
+    <message>
+        <source>Submit Issue</source>
+        <translation>提交建议</translation>
+    </message>
+    <message>
+        <source>Server</source>
+        <translation>服务端</translation>
+    </message>
+    <message>
+        <source>Foundation Sunshine is the core streaming server of the AlkaidLab ecosystem and is installed on the controlled device. It connects AlkaidLab clients with a wide range of devices to deliver stronger streaming capabilities for gaming, creation, media, remote control, and more.</source>
+        <translation>Foundation Sunshine是基地生态的核心串流服务端，需要安装在被控端。它面向游戏、创作、影音与远程控制等场景，连接基地客户端和不同终端设备，提供更强大的串流能力。</translation>
+    </message>
+    <message>
+        <source>Visit Now</source>
+        <translation>立即访问</translation>
+    </message>
+    <message>
+        <source>Download</source>
+        <translation>获取下载</translation>
+    </message>
+    <message>
+        <source>Picture and Streaming</source>
+        <translation>画面与串流</translation>
+    </message>
+    <message>
+        <source>Our exclusive end-to-end HDR technology brings together HDR10, HDR10+, HLG, HDR Vivid, and SDR-to-HDR, alongside in-house capture technology that delivers a smoother experience than WGC, enhanced hardware encoding, and precise frame synchronization.</source>
+        <translation>独家全链路HDR技术覆盖HDR10、HDR10+、HLG、HDR Vivid与SDR转HDR，并结合比WGC更丝滑的自研采集技术、硬件编码增强与精准帧同步，打造更强大的画面与串流体验。</translation>
+    </message>
+    <message>
+        <source>In-house Capture Technology</source>
+        <translation>自研采集技术</translation>
+    </message>
+    <message>
+        <source>Enhanced WGC</source>
+        <translation>增强版WGC</translation>
+    </message>
+    <message>
+        <source>Enhanced AMD Encoding</source>
+        <translation>AMD编码增强</translation>
+    </message>
+    <message>
+        <source>Sliced Encoding</source>
+        <translation>分帧编码</translation>
+    </message>
+    <message>
+        <source>Low-latency Mode</source>
+        <translation>低延迟模式</translation>
+    </message>
+    <message>
+        <source>HDR10</source>
+        <translation>HDR10</translation>
+    </message>
+    <message>
+        <source>HDR10+</source>
+        <translation>HDR10+</translation>
+    </message>
+    <message>
+        <source>HLG</source>
+        <translation>HLG</translation>
+    </message>
+    <message>
+        <source>HDR Vivid</source>
+        <translation>HDR Vivid</translation>
+    </message>
+    <message>
+        <source>Input and Interaction</source>
+        <translation>输入与交互</translation>
+    </message>
+    <message>
+        <source>A stronger input system covers touch, pen, touchpad, mouse, controllers, and stream-side assistance for both gaming and productivity.</source>
+        <translation>更强大的输入体系覆盖触控、手写笔、触控板、鼠标、手柄和串流辅助，让游戏与生产力场景都更自然。</translation>
+    </message>
+    <message>
+        <source>Native Touch</source>
+        <translation>原生触控</translation>
+    </message>
+    <message>
+        <source>Native Pen</source>
+        <translation>原生手写笔</translation>
+    </message>
+    <message>
+        <source>Precision Touchpad</source>
+        <translation>精密触控板</translation>
+    </message>
+    <message>
+        <source>Virtual Mouse</source>
+        <translation>虚拟鼠标</translation>
+    </message>
+    <message>
+        <source>DualSense Controller</source>
+        <translation>DualSense手柄</translation>
+    </message>
+    <message>
+        <source>HD Haptics</source>
+        <translation>HD触觉反馈</translation>
+    </message>
+    <message>
+        <source>Super Menu</source>
+        <translation>超级菜单</translation>
+    </message>
+    <message>
+        <source>Immersive audio, audio haptics, remote microphone, clipboard, and folder sharing extend streaming into entertainment, creation, and collaboration.</source>
+        <translation>沉浸式音频、音频振动、远程麦克风、剪贴板和文件夹共享，将串流延伸到娱乐、创作与协作。</translation>
+    </message>
+    <message>
+        <source>Immersive Audio</source>
+        <translation>沉浸式音频</translation>
+    </message>
+    <message>
+        <source>Audio Haptics</source>
+        <translation>音频振动</translation>
+    </message>
+    <message>
+        <source>Remote Microphone</source>
+        <translation>远程麦克风</translation>
+    </message>
+    <message>
+        <source>Clipboard Sync</source>
+        <translation>剪贴板同步</translation>
+    </message>
+    <message>
+        <source>Folder Sharing</source>
+        <translation>文件夹共享</translation>
+    </message>
+    <message>
+        <source>Audio and Collaboration</source>
+        <translation>音频与协作</translation>
+    </message>
+    <message>
+        <source>Clients</source>
+        <translation>客户端</translation>
+    </message>
+    <message>
+        <source>Client applications act as the controller for the streaming server.</source>
+        <translation>客户端作为控制端，用于操作串流服务端。</translation>
+    </message>
+    <message>
+        <source>Friendly links</source>
+        <translation>友情链接</translation>
+    </message>
+    <message>
+        <source>Moonlight Android Crown</source>
+        <translation>Moonlight Android王冠版</translation>
+    </message>
+    <message>
+        <source>A community-enhanced Android client with an alternative take on mobile input, controller support, and interface features.</source>
+        <translation>Android社区增强客户端，在移动输入、手柄支持和界面功能上提供另一种选择。</translation>
+    </message>
+    <message>
+        <source>The first Moonlight client built for HarmonyOS NEXT, pioneering Moonlight on HarmonyOS and compatible with the AlkaidLab ecosystem.</source>
+        <translation>首个面向HarmonyOS NEXT实现的Moonlight客户端，是鸿蒙Moonlight的先驱者，并兼容基地生态。</translation>
+    </message>
+    <message>
+        <source>Natpierce</source>
+        <translation>皎月连</translation>
+    </message>
+    <message>
+        <source>A virtual networking tool that connects Moonlight clients to Sunshine servers over the public Internet when they are not on the same LAN.</source>
+        <translation>用于异地组网的工具，让Moonlight客户端可以通过公网连接不在同一局域网内的Sunshine服务端。</translation>
+    </message>
+    <message>
+        <source>Legal notice</source>
+        <translation>法律声明</translation>
+    </message>
+    <message>
+        <source>This software is released under GNU GPLv3. The full license and third-party component information are provided below.</source>
+        <translation>本软件依据GNU GPLv3发布，许可证全文及第三方组件信息如下。</translation>
+    </message>
+    <message>
+        <source>License agreement</source>
+        <translation>许可协议</translation>
+    </message>
+    <message>
+        <source>Third-party notice</source>
+        <translation>第三方通知</translation>
+    </message>
+    <message>
+        <source>No external browser is available.</source>
+        <translation>未找到可用的外部浏览器。</translation>
+    </message>
+</context>
+<context>
+    <name>EcosystemPlatformCatalog</name>
+    <message>
+        <source>PC</source>
+        <translation>PC端</translation>
+    </message>
+    <message>
+        <source>Android</source>
+        <translation>安卓</translation>
+    </message>
+    <message>
+        <source>HarmonyOS</source>
+        <translation>鸿蒙</translation>
+    </message>
+    <message>
+        <source>iOS</source>
+        <translation>iOS</translation>
+    </message>
+    <message>
+        <source>macOS Enhanced</source>
+        <translation>macOS增强版</translation>
+    </message>
+    <message>
+        <source>Moonlight V+ for HarmonyOS</source>
+        <translation>Moonlight V+鸿蒙版</translation>
+    </message>
+    <message>
+        <source>AlkaidLab's cross-platform desktop client for Windows, Linux, macOS, and Steam Link</source>
+        <translation>基地跨平台桌面客户端，覆盖Windows、Linux、macOS和Steam Link</translation>
+    </message>
+    <message>
+        <source>AlkaidLab's Android client for phones, tablets, TVs, head units, and Meta Quest devices</source>
+        <translation>基地Android客户端，覆盖手机、平板、电视、车机和Meta Quest设备</translation>
+    </message>
+    <message>
+        <source>AlkaidLab's native HarmonyOS NEXT client for phones, tablets, and 2-in-1 devices</source>
+        <translation>基地原生HarmonyOS NEXT客户端，覆盖手机、平板和二合一设备</translation>
+    </message>
+    <message>
+        <source>Touch-oriented and controller-friendly VoidLink client for iPhone and iPad</source>
+        <translation>面向iPhone和iPad的VoidLink客户端，针对触控操作设计并兼顾手柄体验</translation>
+    </message>
+    <message>
+        <source>AlkaidLab's native macOS client with enhanced HDR, audio, clipboard, and input paths</source>
+        <translation>基地原生macOS增强客户端，强化HDR、音频、剪贴板和输入链路</translation>
+    </message>
+    <message>
+        <source>Windows x64 / ARM64</source>
+        <translation>Windows x64 / ARM64</translation>
+    </message>
+    <message>
+        <source>Android Phone</source>
+        <translation>安卓手机</translation>
+    </message>
+    <message>
+        <source>Android Tablet</source>
+        <translation>安卓平板</translation>
+    </message>
+    <message>
+        <source>Android TV / TV Box</source>
+        <translation>安卓电视/电视盒子</translation>
+    </message>
+    <message>
+        <source>Android Head Unit</source>
+        <translation>安卓车机</translation>
+    </message>
+    <message>
+        <source>HarmonyOS Phone</source>
+        <translation>鸿蒙手机</translation>
+    </message>
+    <message>
+        <source>HarmonyOS Tablet</source>
+        <translation>鸿蒙平板</translation>
+    </message>
+    <message>
+        <source>HarmonyOS 2-in-1</source>
+        <translation>鸿蒙二合一设备</translation>
+    </message>
+    <message>
+        <source>Visit Now</source>
+        <translation>立即访问</translation>
+    </message>
+    <message>
+        <source>Download</source>
+        <translation>获取下载</translation>
+    </message>
+    <message>
+        <source>Supported platforms</source>
+        <translation>支持平台</translation>
+    </message>
+    <message>
+        <source>Featured capabilities</source>
+        <translation>特色能力</translation>
+    </message>
+    <message>
+        <source>Advanced HDR</source>
+        <translation>极致HDR</translation>
+    </message>
+    <message>
+        <source>Clipboard Sync</source>
+        <translation>剪贴板同步</translation>
+    </message>
+    <message>
+        <source>Desktop Collaboration</source>
+        <translation>桌面协作</translation>
+    </message>
+    <message>
+        <source>DualSense Haptics</source>
+        <translation>DualSense触觉反馈</translation>
+    </message>
+    <message>
+        <source>Precise Frame Sync</source>
+        <translation>精准帧同步</translation>
+    </message>
+    <message>
+        <source>Audio Haptics</source>
+        <translation>音频振动</translation>
+    </message>
+    <message>
+        <source>Super Menu</source>
+        <translation>超级菜单</translation>
+    </message>
+    <message>
+        <source>Native Touch</source>
+        <translation>原生触控</translation>
+    </message>
+    <message>
+        <source>Native Pen</source>
+        <translation>原生手写笔</translation>
+    </message>
+    <message>
+        <source>Smart Bitrate</source>
+        <translation>智能码率</translation>
+    </message>
+    <message>
+        <source>HDR Vivid</source>
+        <translation>HDR Vivid</translation>
+    </message>
+    <message>
+        <source>Remote Microphone</source>
+        <translation>远程麦克风</translation>
+    </message>
+    <message>
+        <source>Gyro Aim</source>
+        <translation>体感瞄准</translation>
+    </message>
+    <message>
+        <source>Touch-oriented Interface</source>
+        <translation>触控优先界面</translation>
+    </message>
+    <message>
+        <source>Controller Friendly</source>
+        <translation>手柄友好</translation>
+    </message>
+    <message>
+        <source>In-stream Widgets</source>
+        <translation>串流内小组件</translation>
+    </message>
+    <message>
+        <source>Image Enhancement</source>
+        <translation>画质增强</translation>
+    </message>
+    <message>
+        <source>Immersive Audio</source>
+        <translation>沉浸式音频</translation>
+    </message>
+    <message>
+        <source>Low-latency Input</source>
+        <translation>低延迟输入</translation>
+    </message>
+    <message>
+        <source>Official links</source>
+        <translation>官方入口</translation>
+    </message>
+</context>
+<context>
+    <name>CommunityLicenseNotice</name>
+    <message>
+        <source>Open Source and Compatibility Notice</source>
+        <translation>开源与兼容性声明</translation>
+    </message>
+    <message>
+        <source>We know open source is not easy. Every feature, test, answer, and maintenance update represents real time and effort from real people. AlkaidLab follows GPLv3 so that every user can access the source, understand the software, modify it freely, and pass those freedoms on.</source>
+        <translation>我们知道，开源并不容易。每一次开发、测试、答疑和维护，背后都是真实的人投入的时间与精力。基地开源社区选择坚持GPLv3，是希望每一位用户都能获得源码、理解软件、自由修改，并把这些权利继续传递下去。</translation>
+    </message>
+    <message>
+        <source>Freedom and Responsibility</source>
+        <translation>自由与责任</translation>
+    </message>
+    <message>
+        <source>GPLv3 gives everyone the freedom to run this software. When you copy, modify, or distribute it, please help preserve that freedom:</source>
+        <translation>GPLv3允许所有人自由运行本软件。当你复制、修改或向他人分发本软件时，也需要共同维护这份自由：</translation>
+    </message>
+    <message>
+        <source>Keep the original copyright and license notices.</source>
+        <translation>保留原有的版权和许可证声明。</translation>
+    </message>
+    <message>
+        <source>Clearly state what you changed.</source>
+        <translation>明确说明自己修改过哪些内容。</translation>
+    </message>
+    <message>
+        <source>When distributing modified or binary versions, provide the corresponding source as required by GPLv3.</source>
+        <translation>分发修改版或二进制版本时，按照GPLv3提供对应源码。</translation>
+    </message>
+    <message>
+        <source>Do not impose additional terms that restrict downstream use, study, modification, or redistribution.</source>
+        <translation>不添加限制下游使用、研究、修改和继续分享的附加条件。</translation>
+    </message>
+    <message>
+        <source>We Will Not Endorse Violations</source>
+        <translation>我们不会为违规行为背书</translation>
+    </message>
+    <message>
+        <source>For software confirmed to violate the GPL and whose distributors refuse to correct the violation, AlkaidLab will not provide dedicated compatibility work, recommendations, promotion, or bundling.</source>
+        <translation>对于已经确认存在GPL违规且拒绝整改的软件，基地开源社区不提供专项适配、推荐、宣传或捆绑。</translation>
+    </message>
+    <message>
+        <source>This is not about creating conflict. It protects the work of contributors and each user&apos;s right to obtain, inspect, and modify the source.</source>
+        <translation>这不是为了制造对立，而是为了保护每一位贡献者的劳动，也为了保护用户继续获得源码、检查软件和修改软件的权利。</translation>
+    </message>
+    <message>
+        <source>If a project&apos;s authorization, source availability, or license status cannot yet be verified, the community will remain cautious and welcomes clarification from its developers. We will not label a project as infringing without evidence.</source>
+        <translation>如果某个项目的授权来源、源码提供情况或许可证状态暂时无法确认，社区会保持审慎，也欢迎开发者主动沟通和澄清。我们不会在缺少事实依据时直接认定某个项目侵权。</translation>
+    </message>
+    <message>
+        <source>Community Agreement</source>
+        <translation>社区约定</translation>
+    </message>
+    <message>
+        <source>Within AlkaidLab community spaces, using this software for illegal activities, game cheating, the development or distribution of cheats, or conduct that infringes the rights of others is prohibited and will not receive community support.</source>
+        <translation>基地开源社区禁止在社区范围内利用本软件从事违法活动、游戏作弊、外挂制作或传播，以及侵害他人权益的行为，相关行为不会获得社区支持。</translation>
+    </message>
+    <message>
+        <source>Respect open-source licenses and the copyrights of original authors.</source>
+        <translation>尊重开源许可证和原作者的版权。</translation>
+    </message>
+    <message>
+        <source>Do not promote software confirmed to have unresolved license violations in the community.</source>
+        <translation>不在社区内推广已经确认存在许可违规的软件。</translation>
+    </message>
+    <message>
+        <source>When sharing software, include its project source and license information whenever possible.</source>
+        <translation>分享软件时尽量同时提供项目来源和许可证信息。</translation>
+    </message>
+    <message>
+        <source>Use, improve, and contribute to genuinely free and open-source alternatives.</source>
+        <translation>鼓励使用、改进和贡献真正自由开源的替代方案。</translation>
+    </message>
+    <message>
+        <source>If a program&apos;s license status is unclear, ask the community before promoting it.</source>
+        <translation>对许可证状态有疑问时，可以先向社区咨询。</translation>
+    </message>
+    <message>
+        <source>A Final Note</source>
+        <translation>写在最后</translation>
+    </message>
+    <message>
+        <source>Software freedom does not sustain itself. It depends on every developer&apos;s persistence and every user&apos;s choice to respect and protect it. Thank you for helping us keep the open-source community free, transparent, and welcoming, and for giving the people who build it the respect they deserve.</source>
+        <translation>自由不是免费得来的。它依靠每一位开发者的坚持，也依靠每一位用户主动尊重和保护。感谢大家与我们一起，让开源社区保持自由、透明、友善，也让认真投入开源的人得到应有的尊重。</translation>
+    </message>
+    <message>
+        <source>— AlkaidLab Open Source Community Maintainers</source>
+        <translation>—— 基地开源社区维护组</translation>
+    </message>
+    <message>
+        <source>This notice describes AlkaidLab&apos;s maintenance and compatibility policy and is not legal advice. Specific rights and obligations are governed by the GNU GPLv3 license text.</source>
+        <translation>本声明用于说明基地开源社区的维护与兼容性政策，不构成法律意见。具体权利与义务以GNU GPLv3许可证原文为准。</translation>
     </message>
 </context>
 <context>
