@@ -7,8 +7,11 @@ import "."
 Button {
     id: control
 
+    property bool primary: false
+
     font.family: Theme.fontSans
     font.bold: true
+    palette.buttonText: primary ? Theme.ink : Theme.text
 
     // 关掉 FluentWinUI3 那圈白色圆角双环，焦点由下面的 2px accent 边框表达。
     // 详见 FocusRing.qml 的注释。
@@ -18,12 +21,17 @@ Button {
         implicitWidth: 96
         implicitHeight: 34
 
-        fill: control.down ? Theme.accentDim
-                           : (control.hovered ? Theme.surface2 : Theme.surface)
+        fill: control.primary
+              ? (control.down ? Theme.accentDim
+                              : (control.hovered ? Theme.accentStrong : Theme.accent))
+              : (control.down ? Theme.accentDim
+                              : (control.hovered ? Theme.surface2 : Theme.surface))
         // hover / 按下是 1px accent，focus 是 2px accent —— 靠粗细区分，
         // 免得「鼠标停在上面」和「焦点在这里」看起来一模一样。
-        borderColor: control.down || control.hovered || control.visualFocus
-                     ? Theme.accent : Theme.lineStrong
+        borderColor: control.primary
+                     ? Theme.ink
+                     : (control.down || control.hovered || control.visualFocus
+                        ? Theme.accent : Theme.lineStrong)
         borderWidth: control.visualFocus ? 2 : 1
         // 按钮比卡片小，投影跟着收一档，否则一堆小按钮会糊成黑块
         shadowDepth: control.down ? 2 : (control.hovered || control.visualFocus ? 6 : 4)

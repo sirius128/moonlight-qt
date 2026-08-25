@@ -3,7 +3,6 @@ import QtQuick.Controls
 import QtQuick.Window 2.2
 
 import StreamingPreferences 1.0
-import ComputerManager 1.0
 import SdlGamepadKeyNavigation 1.0
 import SystemProperties 1.0
 
@@ -37,10 +36,12 @@ FocusScope {
         { key: "display",  icon: "qrc:/res/fluent/cat-display.svg",  title: qsTr("Display Settings") },
         { key: "audio",    icon: "qrc:/res/fluent/cat-audio.svg",    title: qsTr("Audio Settings") },
         { key: "host",     icon: "qrc:/res/fluent/cat-host.svg",     title: qsTr("Host Settings") },
-        { key: "ui",       icon: "qrc:/res/fluent/cat-ui.svg",       title: qsTr("UI Settings") },
         { key: "input",    icon: "qrc:/res/fluent/cat-input.svg",    title: qsTr("Input Settings") },
         { key: "gamepad",  icon: "qrc:/res/fluent/cat-gamepad.svg",  title: qsTr("Gamepad Settings") },
-        { key: "advanced", icon: "qrc:/res/fluent/cat-advanced.svg", title: qsTr("Advanced Settings") }
+        { key: "advanced", icon: "qrc:/res/fluent/cat-advanced.svg", title: qsTr("Advanced Settings") },
+        { key: "ui",       icon: "qrc:/res/fluent/cat-ui.svg",       title: qsTr("Software Settings") },
+        { key: "ecosystem",icon: "qrc:/res/fluent/cat-ecosystem.svg",title: qsTr("AlkaidLab Ecosystem") },
+        { key: "about",    icon: "qrc:/res/fluent/cat-about.svg",    title: qsTr("About") }
     ]
 
     StackView.onActivated: {
@@ -121,19 +122,19 @@ FocusScope {
     // hidden PcView here duplicated its model, network work, and scene graph.
     Image {
         anchors.fill: parent
+        visible: StreamingPreferences.backgroundSource !== StreamingPreferences.BGS_NONE
         source: Window.window && Window.window.backgroundImageUrl !== ""
                 ? Window.window.backgroundImageUrl
                 : "qrc:/res/gura.png"
-        opacity: 0.35
         fillMode: Image.PreserveAspectCrop
         z: -2
     }
 
     Rectangle {
         anchors.fill: parent
-        // 只做一点点补压：全局壁纸遮罩（main.qml 里的 60% 黑）已经压过一次了，
-        // 这里再叠满会糊成一团，所以这层只负责把色调拉回 --background-darker。
-        color: Qt.rgba(0.059, 0.090, 0.165, 0.25)
+        visible: StreamingPreferences.backgroundSource !== StreamingPreferences.BGS_NONE
+        color: Qt.rgba(Theme.ink.r, Theme.ink.g, Theme.ink.b,
+                       StreamingPreferences.backgroundOverlayOpacity / 100.0)
         z: -1
     }
 
@@ -219,6 +220,28 @@ FocusScope {
 
                 onLanguageChanged: settingsPage.languageChanged()
                 onBitratePreferenceChanged: basicPage.syncBitrateFromPreferences()
+            }
+
+            EcosystemSettingsPage {
+                id: ecosystemPage
+                y: basicPage.height + displayPage.height + legacyPage.height
+                width: parent.width
+                visible: settingsPage.category === "ecosystem"
+                height: visible ? implicitHeight : 0
+                onAboutRequested: {
+                    settingsPage.category = "about"
+                    rail.focusCurrent()
+                    scrollArea.contentY = 0
+                }
+            }
+
+            AboutSettingsPage {
+                id: aboutPage
+                y: basicPage.height + displayPage.height + legacyPage.height + ecosystemPage.height
+                width: parent.width
+                visible: settingsPage.category === "about"
+                height: visible ? implicitHeight : 0
+                onScrollToEndRequested: scrollArea.scrollToEnd()
             }
         }
     }

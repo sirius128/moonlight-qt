@@ -18,6 +18,8 @@ import "Brand.js" as Brand
 ApplicationWindow {
     property bool pollingActive: false
     property bool revealAfterFirstFrame: false
+    property bool configurationChecksStarted: false
+    property bool initialBackgroundChoiceHandled: false
 
     Timer {
         id: revealFallbackTimer
@@ -35,14 +37,18 @@ ApplicationWindow {
     property bool clearOnBack: false
 
     id: window
-    title: Qt.application.displayName
+    // macOS 原生标题栏会居中显示窗口标题，和工具栏面包屑里的字标叠成双标题；
+    // 清空原生标题，让工具栏做唯一的品牌位。Windows/Linux 无此问题。
+    title: SystemProperties.isDarwin ? "" : Qt.application.displayName
     width: 1280
     height: 640
 
     WindowPlacement {
         id: windowPlacement
         window: window
-        enabled: StreamingPreferences.rememberWindowPosition
+        enabled: StreamingPreferences.rememberWindowPosition &&
+                 SystemProperties.hasDesktopEnvironment &&
+                 (!SystemProperties.isRunningWayland || SystemProperties.isRunningXWayland)
     }
 
     WindowsWindowChrome {
@@ -92,24 +98,55 @@ ApplicationWindow {
         SdlGamepadKeyNavigation.enable()
     }
 
+    function startConfigurationChecks() {
+        if (configurationChecksStarted) {
+            return
+        }
+        configurationChecksStarted = true
+
+        if (!runConfigChecks) {
+            return
+        }
+
+        if (SystemProperties.isWow64) {
+            wow64Dialog.open()
+        }
+
+        // Hardware acceleration and unmapped gamepads are checked asynchronously.
+        SystemProperties.hasHardwareAccelerationChanged.connect(hasHardwareAccelerationChanged)
+        SystemProperties.unmappedGamepadsChanged.connect(hasUnmappedGamepadsChanged)
+        SystemProperties.startAsyncLoad()
+    }
+
+    function commitInitialBackgroundSource(source) {
+        if (initialBackgroundChoiceHandled) {
+            return
+        }
+
+        initialBackgroundChoiceHandled = true
+        StreamingPreferences.backgroundSource = source
+        StreamingPreferences.save()
+    }
+
     Component.onCompleted: {
-        // Always fit the initial window to the current screen. If the user opted
-        // in, restore the last normal window geometry before showing it.
+        // Always fit the initial window to the current screen. When the preference
+        // is enabled, restore the last normal window geometry before showing it.
         windowsWindowChrome.activate()
-        windowPlacement.restore()
+        var startMaximized = windowPlacement.restore(
+                    StreamingPreferences.uiDisplayMode === StreamingPreferences.UI_MAXIMIZED)
 
         // Show the window according to the user's preferences
         if (SystemProperties.hasDesktopEnvironment) {
-            if (StreamingPreferences.uiDisplayMode == StreamingPreferences.UI_MAXIMIZED) {
+            if (StreamingPreferences.uiDisplayMode === StreamingPreferences.UI_FULLSCREEN) {
+                window.showFullScreen()
+            }
+            else if (startMaximized) {
                 if (Qt.platform.os === "windows") {
                     window.opacity = 0
                     window.revealAfterFirstFrame = true
                     revealFallbackTimer.start()
                 }
                 window.showMaximized()
-            }
-            else if (StreamingPreferences.uiDisplayMode == StreamingPreferences.UI_FULLSCREEN) {
-                window.showFullScreen()
             }
             else {
                 window.show()
@@ -118,16 +155,13 @@ ApplicationWindow {
             window.showFullScreen()
         }
 
-        // Display any modal dialogs for configuration warnings
-        if (runConfigChecks) {
-            if (SystemProperties.isWow64) {
-                wow64Dialog.open()
-            }
-
-            // Hardware acceleration and unmapped gamepads are checked asynchronously
-            SystemProperties.hasHardwareAccelerationChanged.connect(hasHardwareAccelerationChanged)
-            SystemProperties.unmappedGamepadsChanged.connect(hasUnmappedGamepadsChanged)
-            SystemProperties.startAsyncLoad()
+        // Let a fresh install choose its background before any other startup
+        // warning is opened. Existing installs and CLI launches skip this step.
+        if (runConfigChecks && !StreamingPreferences.backgroundSetupCompleted) {
+            Qt.callLater(function() { backgroundSourceDialog.open() })
+        }
+        else {
+            startConfigurationChecks()
         }
     }
 
@@ -193,12 +227,12 @@ ApplicationWindow {
         z: -3
     }
 
-    // 压暗壁纸，保证上层的文字和加载动画有足够对比度。用 ink 而不是纯黑，
-    // 和各页自己那层遮罩同一个底色，切页时不会有色温跳变。
+    // 压暗壁纸，保证上层内容的可读性；强度和各个自绘背景页使用同一设置。
     Rectangle {
         anchors.fill: parent
         anchors.topMargin: -window.chromeInset
-        color: Qt.rgba(Theme.ink.r, Theme.ink.g, Theme.ink.b, 0.72)
+        color: Qt.rgba(Theme.ink.r, Theme.ink.g, Theme.ink.b,
+                       StreamingPreferences.backgroundOverlayOpacity / 100.0)
         visible: window.showGlobalBackground
         z: -2
     }
@@ -754,6 +788,8 @@ ApplicationWindow {
             NavigableToolButton {
                 id: settingsButton
 
+                visible: !(stackView.currentItem instanceof SettingsView)
+
                 iconSource:  "qrc:/res/fluent/tb-settings.svg"
 
                 onClicked: navigateTo("qrc:/gui/SettingsView.qml", SettingsView)
@@ -765,6 +801,8 @@ ApplicationWindow {
                 Shortcut {
                     id: settingsShortcut
                     sequence: StandardKey.Preferences
+                    // 设置页隐藏入口时同步停用快捷键，避免重复压入 SettingsView。
+                    enabled: settingsButton.visible
                     onActivated: settingsButton.clicked()
                 }
 
@@ -821,6 +859,26 @@ ApplicationWindow {
         closePolicy: Popup.CloseOnEscape
         showSpinner: true
         text: qsTr("Preparing update...")
+    }
+
+    BackgroundSourceDialog {
+        id: backgroundSourceDialog
+
+        onSourceChosen: function(source) {
+            window.commitInitialBackgroundSource(source)
+        }
+
+        Connections {
+            target: backgroundSourceDialog
+            function onClosed() {
+                // Escape and window-manager close mean “decide later”: keep the
+                // photography default, mark the picker handled, then continue startup.
+                if (!window.initialBackgroundChoiceHandled) {
+                    window.commitInitialBackgroundSource(StreamingPreferences.BGS_PHOTOGRAPHY)
+                }
+                window.startConfigurationChecks()
+            }
+        }
     }
 
     ErrorMessageDialog {

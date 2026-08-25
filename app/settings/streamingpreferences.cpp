@@ -83,8 +83,15 @@
 #define SER_HDRMAXAVERAGEBRIGHTNESS "hdrmaxaveragebrightness"
 #define SER_AUTOUPDATECHECK "autoupdatecheck"
 #define SER_RENDERER "renderer"
+#define SER_BACKGROUNDSOURCE "backgroundsource"
+#define SER_BACKGROUNDIMAGEAPI "backgroundimageapi"
+#define SER_BACKGROUNDIMAGELOCALPATH "backgroundimagelocalpath"
+#define SER_BACKGROUNDOVERLAYOPACITY "backgroundoverlayopacity"
+#define SER_BACKGROUNDSETUPCOMPLETED "backgroundsetupcompleted"
 
 #define CURRENT_DEFAULT_VER 2
+
+static constexpr int DEFAULT_BACKGROUND_OVERLAY_OPACITY = 72;
 
 static StreamingPreferences* s_GlobalPrefs;
 
@@ -101,6 +108,20 @@ static StreamingPreferences::OverlayMenuPosition decodeOverlayMenuPlacement(int 
         return static_cast<StreamingPreferences::OverlayMenuPosition>(value);
     default:
         return StreamingPreferences::OMP_DISABLED;
+    }
+}
+
+static StreamingPreferences::BackgroundSource decodeBackgroundSource(int value)
+{
+    switch (value) {
+    case StreamingPreferences::BGS_PHOTOGRAPHY:
+    case StreamingPreferences::BGS_ANIME:
+    case StreamingPreferences::BGS_API:
+    case StreamingPreferences::BGS_LOCAL:
+    case StreamingPreferences::BGS_NONE:
+        return static_cast<StreamingPreferences::BackgroundSource>(value);
+    default:
+        return StreamingPreferences::BGS_PHOTOGRAPHY;
     }
 }
 
@@ -309,9 +330,23 @@ void StreamingPreferences::reload()
     uiDisplayMode = static_cast<UIDisplayMode>(settings.value(SER_UIDISPLAYMODE,
                                                static_cast<int>(settings.value(SER_STARTWINDOWED, true).toBool() ? UIDisplayMode::UI_WINDOWED
                                                                                                                  : UIDisplayMode::UI_MAXIMIZED)).toInt());
-    rememberWindowPosition = settings.value(SER_REMEMBERWINDOWPOSITION, false).toBool();
+    rememberWindowPosition = settings.value(SER_REMEMBERWINDOWPOSITION, true).toBool();
     language = static_cast<Language>(settings.value(SER_LANGUAGE,
                                                     static_cast<int>(Language::LANG_AUTO)).toInt());
+    const auto defaultBackgroundSource = defaultVer > 0 ? BGS_ANIME : BGS_PHOTOGRAPHY;
+    m_BackgroundSource = decodeBackgroundSource(settings.value(
+                                                    SER_BACKGROUNDSOURCE,
+                                                    static_cast<int>(defaultBackgroundSource)).toInt());
+    m_BackgroundImageApi = settings.value(SER_BACKGROUNDIMAGEAPI).toString().trimmed();
+    m_BackgroundImageLocalPath = settings.value(SER_BACKGROUNDIMAGELOCALPATH).toString();
+    m_BackgroundOverlayOpacity = qBound(0,
+                                        settings.value(SER_BACKGROUNDOVERLAYOPACITY,
+                                                       DEFAULT_BACKGROUND_OVERLAY_OPACITY).toInt(),
+                                        100);
+    // This marker records an explicit background choice. The general settings
+    // version cannot be used here because upgrades may never have configured a
+    // background and must receive the same one-time choice as new installs.
+    m_BackgroundSetupCompleted = settings.value(SER_BACKGROUNDSETUPCOMPLETED, false).toBool();
     int storedScreenCombinationMode;
     if (settings.contains(SER_SCREENCOMBINATIONMODE)) {
         storedScreenCombinationMode = settings.value(SER_SCREENCOMBINATIONMODE, SCM_FOLLOW_HOST).toInt();
@@ -376,6 +411,123 @@ void StreamingPreferences::setOverlayMenuPosition(OverlayMenuPosition position)
 
     overlayMenuPosition = position;
     emit overlayMenuPositionChanged();
+}
+
+StreamingPreferences::BackgroundSource StreamingPreferences::backgroundSource() const
+{
+    return m_BackgroundSource;
+}
+
+void StreamingPreferences::setBackgroundSource(BackgroundSource source)
+{
+    source = decodeBackgroundSource(static_cast<int>(source));
+
+    const bool setupWasCompleted = m_BackgroundSetupCompleted;
+    const bool changed = m_BackgroundSource != source;
+    m_BackgroundSource = source;
+
+    setBackgroundSetupCompleted(true);
+    if (changed || !setupWasCompleted) {
+        emit backgroundConfigurationChanged();
+    }
+}
+
+QString StreamingPreferences::backgroundImageApi() const
+{
+    return m_BackgroundImageApi;
+}
+
+void StreamingPreferences::setBackgroundImageApi(const QString &apiUrl)
+{
+    const QString normalizedUrl = apiUrl.trimmed();
+    const BackgroundSource source = normalizedUrl.isEmpty() ? BGS_PHOTOGRAPHY : BGS_API;
+    const bool setupWasCompleted = m_BackgroundSetupCompleted;
+    const bool changed = m_BackgroundImageApi != normalizedUrl ||
+                         m_BackgroundSource != source;
+
+    m_BackgroundImageApi = normalizedUrl;
+    m_BackgroundSource = source;
+
+    setBackgroundSetupCompleted(true);
+    if (changed || !setupWasCompleted) {
+        emit backgroundConfigurationChanged();
+    }
+}
+
+QString StreamingPreferences::backgroundImageLocalPath() const
+{
+    return m_BackgroundImageLocalPath;
+}
+
+void StreamingPreferences::setBackgroundImageLocalPath(const QString &path)
+{
+    const QString normalizedPath = path.trimmed();
+    const BackgroundSource source = normalizedPath.isEmpty() ? BGS_PHOTOGRAPHY : BGS_LOCAL;
+    const bool setupWasCompleted = m_BackgroundSetupCompleted;
+    const bool changed = m_BackgroundImageLocalPath != normalizedPath ||
+                         m_BackgroundSource != source;
+
+    m_BackgroundImageLocalPath = normalizedPath;
+    m_BackgroundSource = source;
+
+    setBackgroundSetupCompleted(true);
+    if (changed || !setupWasCompleted) {
+        emit backgroundConfigurationChanged();
+    }
+}
+
+int StreamingPreferences::backgroundOverlayOpacity() const
+{
+    return m_BackgroundOverlayOpacity;
+}
+
+void StreamingPreferences::setBackgroundOverlayOpacity(int opacity)
+{
+    opacity = qBound(0, opacity, 100);
+    if (m_BackgroundOverlayOpacity == opacity) {
+        return;
+    }
+
+    m_BackgroundOverlayOpacity = opacity;
+    emit backgroundOverlayOpacityChanged();
+}
+
+bool StreamingPreferences::backgroundSetupCompleted() const
+{
+    return m_BackgroundSetupCompleted;
+}
+
+void StreamingPreferences::setBackgroundSetupCompleted(bool completed)
+{
+    if (m_BackgroundSetupCompleted == completed) {
+        return;
+    }
+
+    m_BackgroundSetupCompleted = completed;
+    emit backgroundSetupCompletedChanged();
+}
+
+void StreamingPreferences::resetBackgroundConfiguration()
+{
+    const bool setupWasCompleted = m_BackgroundSetupCompleted;
+    const bool overlayOpacityChanged =
+            m_BackgroundOverlayOpacity != DEFAULT_BACKGROUND_OVERLAY_OPACITY;
+    const bool changed = m_BackgroundSource != BGS_PHOTOGRAPHY ||
+                         !m_BackgroundImageApi.isEmpty() ||
+                         !m_BackgroundImageLocalPath.isEmpty();
+
+    m_BackgroundSource = BGS_PHOTOGRAPHY;
+    m_BackgroundImageApi.clear();
+    m_BackgroundImageLocalPath.clear();
+    m_BackgroundOverlayOpacity = DEFAULT_BACKGROUND_OVERLAY_OPACITY;
+
+    setBackgroundSetupCompleted(true);
+    if (overlayOpacityChanged) {
+        emit backgroundOverlayOpacityChanged();
+    }
+    if (changed || !setupWasCompleted) {
+        emit backgroundConfigurationChanged();
+    }
 }
 
 bool StreamingPreferences::retranslate()
@@ -557,6 +709,11 @@ void StreamingPreferences::save()
     settings.setValue(SER_UIDISPLAYMODE, static_cast<int>(uiDisplayMode));
     settings.setValue(SER_REMEMBERWINDOWPOSITION, rememberWindowPosition);
     settings.setValue(SER_LANGUAGE, static_cast<int>(language));
+    settings.setValue(SER_BACKGROUNDSOURCE, static_cast<int>(m_BackgroundSource));
+    settings.setValue(SER_BACKGROUNDIMAGEAPI, m_BackgroundImageApi);
+    settings.setValue(SER_BACKGROUNDIMAGELOCALPATH, m_BackgroundImageLocalPath);
+    settings.setValue(SER_BACKGROUNDOVERLAYOPACITY, m_BackgroundOverlayOpacity);
+    settings.setValue(SER_BACKGROUNDSETUPCOMPLETED, m_BackgroundSetupCompleted);
     settings.setValue(SER_DEFAULTVER, CURRENT_DEFAULT_VER);
     settings.setValue(SER_SWAPMOUSEBUTTONS, swapMouseButtons);
     settings.setValue(SER_SWAPWINALTKEYS, swapWinAltKeys);
