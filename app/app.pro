@@ -212,7 +212,7 @@ win32 {
     CONFIG += ffmpeg libplacebo
 }
 win32:!winrt {
-    DEFINES += HAVE_WINDOWS_RAW_TOUCHPAD HAVE_WINDOWS_PEN_INPUT
+    DEFINES += HAVE_WINDOWS_RAW_TOUCHPAD HAVE_WINDOWS_PEN_INPUT HAVE_PHYSICAL_DS5_HAPTICS
     LIBS += -lhid
     SOURCES += \
         streaming/input/wintouchpad.cpp \
@@ -239,7 +239,7 @@ win32:!winrt:equals(MOONLIGHT_FUNCTION_TESTS_ENABLED, 1) {
 }
 
 macx {
-    DEFINES += HAVE_MACOS_NATIVE_TOUCHPAD
+    DEFINES += HAVE_MACOS_NATIVE_TOUCHPAD HAVE_PHYSICAL_DS5_HAPTICS
 
     !disable-prebuilts {
         LIBS += -lssl.3 -lcrypto.3 -lavcodec.63 -lavutil.61 -lswscale.10 -lopus.0 -lSDL2 -lSDL2_ttf -lplacebo
@@ -251,8 +251,14 @@ macx {
     SOURCES += streaming/audio/dualsensehapticsmac.mm
     HEADERS += streaming/audio/dualsensehapticsmac.h
 
-    # For libsoundio
-    LIBS += -framework CoreAudio -framework AudioUnit
+    # Lock-free ring feeding the DualSense haptics output unit from the worker
+    # thread. Vendored so the physical haptics path stays self-contained.
+    SOURCES += $$PWD/../third-party/TPCircularBuffer/TPCircularBuffer.c
+    HEADERS += $$PWD/../third-party/TPCircularBuffer/TPCircularBuffer.h
+    INCLUDEPATH += $$PWD/../third-party/TPCircularBuffer
+
+    # For libsoundio and the physical DualSense haptics endpoint
+    LIBS += -framework CoreAudio -framework AudioUnit -framework AudioToolbox
 
     CONFIG += ffmpeg soundio
 }
