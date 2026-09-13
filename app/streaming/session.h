@@ -2,6 +2,7 @@
 
 #include <QSemaphore>
 #include <QPoint>
+#include <QJsonArray>
 #include <QQuickWindow>
 
 #include <atomic>
@@ -18,6 +19,7 @@
 #include "video/overlaymanager.h"
 #include "video/overlaymenupanel.h"
 #include "video/overlaymenubutton.h"
+#include "backend/usbforwardingtunnel.h"
 #include "video/overlaytoast.h"
 #ifndef STEAM_LINK
 #include "micstream.h"
@@ -29,6 +31,9 @@ struct MountState;
 }
 
 class DualSenseHapticsRenderer;
+#ifdef Q_OS_DARWIN
+class MacQtEventPumpInputGuard;
+#endif
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
 class StylusReplayTest;
 #endif
@@ -178,6 +183,10 @@ private:
     // unexpected network interruption. Returns true if streaming resumed.
     bool tryReconnect();
 
+    void handleSdlUserEvent(const SDL_UserEvent& event);
+
+    void updateDualSenseHapticsControllerTarget();
+
     // Emit the appropriate error dialog for a connection termination code.
     void displayTerminationError(int errorCode);
 
@@ -209,14 +218,20 @@ private:
     void syncQtOverlayWindowsWithSdlWindowState();
     void dispatchQtMenuAction(OverlayMenuPanel::MenuAction action);
     void requestRuntimeBitrateChange(int bitrateKbps);
+    void startRuntimeBitrateWorker();
     void showStreamingToast(const QString& message, int durationMs = 2000);
+    void processQtOverlayEvents();
     void updateFileMappingMenuState();
+    void updateRemoteUsbMenuState();
     bool openFileMappingMountPath();
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
     void restoreCaptureAfterStylusReplayPanel();
 #endif
 #ifdef Q_OS_WIN32
-    void queryDisplayHdrBrightness(float& maxNits, float& minNits, float& maxFullNits);
+    void queryDisplayHdrBrightness(const QString& preferredDisplayName,
+                                   float& maxNits, float& minNits,
+                                   float& maxFullNits, float& sdrWhiteNits);
+    float queryDisplaySdrWhiteNits(const QString& displayName, bool logFailures = true);
 #endif
 
     void notifyMouseEmulationMode(bool enabled);
@@ -322,6 +337,12 @@ private:
     void processFileMappingMountResult();
     void cleanupFileMappingMount();
     void startFileMappingSmokeProbe();
+    void refreshRemoteUsbDevices();
+    void enumerateRemoteUsb();
+    void startRemoteUsb(const QString &deviceId);
+    void startConfiguredRemoteUsb(UsbForwarding::TunnelConfig config);
+    void stopRemoteUsb();
+    void teardownUsbTunnel();
 
     static
     int drSubmitDecodeUnit(PDECODE_UNIT du);
@@ -335,6 +356,7 @@ private:
     NvComputer* m_Computer;
     NvApp m_App;
     QString m_LaunchDisplayName;
+    QString m_ClientDisplayName;
     std::optional<bool> m_LaunchUseVdd;
     SDL_Window* m_Window;
     IVideoDecoder* m_VideoDecoder;
@@ -357,6 +379,7 @@ private:
     int m_LastTerminationErrorCode;      // stored to show final error if reconnect gives up
 
     bool m_AsyncConnectionSuccess;
+    float m_LastClientSdrWhiteNits;
     int m_PortTestResults;
 
     int m_ActiveVideoFormat;
@@ -387,9 +410,16 @@ private:
     RTP_VIDEO_STATS m_LastAbrVideoStats;
     std::shared_ptr<std::atomic_bool> m_AbrFeedbackInFlight;
     std::shared_ptr<std::atomic_int> m_AbrCurrentBitrateKbps;
+    // Runtime bitrate requests coalesce here; a single background worker
+    // applies the newest value so HTTP never blocks the stream loop.
+    std::atomic_int m_PendingRuntimeBitrateKbps { 0 };
+    std::atomic_bool m_RuntimeBitrateInFlight { false };
     OverlayMenuPanel* m_MenuPanel; // Qt-based overlay menu window
     OverlayMenuButton* m_MenuButton; // Qt-based floating menu button
     OverlayToast* m_Toast;           // Qt-based toast notification
+#ifdef Q_OS_DARWIN
+    std::unique_ptr<MacQtEventPumpInputGuard> m_MacQtEventPumpInputGuard;
+#endif
     OverlayMenuPanel::FileMappingState m_FileMappingState;
     QString m_FileMappingDetail;
     QString m_FileMappingToast;
@@ -403,6 +433,20 @@ private:
     std::mutex m_CursorUpdateMutex;
     std::shared_ptr<RemoteCursorUpdate> m_PendingCursorUpdate;
     bool m_CursorUpdateEventQueued = false;
+    /* USB forwarding: one reverse tunnel per forwarded device, owned by this
+     * session. m_RemoteUsbDevices mirrors the bound-device list from
+     * UsbForwardingBackend and feeds the overlay menu. On macOS the local
+     * USB/IP server (moonlight-usbd serve) is spawned per session and torn
+     * down together with the tunnel. */
+    UsbForwarding::Tunnel *m_UsbTunnel = nullptr;
+    class UsbForwardingLocalServer* m_UsbLocalServer = nullptr;
+    quint64 m_UsbCapabilityGeneration = 0;
+    bool m_UsbCapabilityPending = false;
+    std::vector<OverlayMenuPanel::RemoteUsbDevice> m_RemoteUsbDevices;
+    OverlayMenuPanel::RemoteUsbState m_RemoteUsbState =
+        OverlayMenuPanel::RemoteUsbState::Unavailable;
+    QString m_RemoteUsbActiveDeviceId;
+    QString m_RemoteUsbDetail;
 
     static CONNECTION_LISTENER_CALLBACKS k_ConnCallbacks;
     static Session* s_ActiveSession;

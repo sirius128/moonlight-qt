@@ -4,15 +4,33 @@
 #include <QScreen>
 #include <QGuiApplication>
 #include <QCoreApplication>
-#include <QPainterPath>
 #include <QCursor>
-#include <QFontDatabase>
 #include <QFontMetrics>
+#include <QtMath>
 #include <memory>
 
 namespace {
 constexpr qint64 PointerGracePeriodMs = 300;
 constexpr int PointerCheckIntervalMs = 150;
+// Raster counterpart of gui/theme/Theme.qml (same palette and hard edges).
+const QColor MenuSurface("#171A20");
+const QColor MenuHover("#1F232B");
+const QColor MenuLine("#3C434E");
+const QColor MenuText("#EEF0EC");
+const QColor MenuDim("#AEB3AB");
+const QColor MenuFaint("#7E858E");
+const QColor MenuAccent("#39C5BB");
+const QColor MenuDanger("#FF876F");
+
+// Bitrate scrubber range and granularity — log scale like the settings page
+// slider. The maximum matches Sunshine's /bitrate runtime endpoint cap
+// (800000 Kbps); higher values would be rejected by the host.
+constexpr int kBitrateMinKbps = 500;
+constexpr int kBitrateMaxKbps = 800000;
+constexpr int kBitrateLogSteps = 200;
+const double kBitrateLogSpan = qLn(kBitrateMaxKbps / double(kBitrateMinKbps));
+// Idle window after the last scrub tick before the change is committed.
+constexpr int kBitrateCommitDelayMs = 450;
 }
 
 OverlayMenuPanel::OverlayMenuPanel(QWindow* parent)
@@ -23,6 +41,9 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent)
       m_HasGamepads(false),
       m_FileMappingState(FileMappingState::Unknown),
       m_FileMappingDetail(tr("Checking")),
+      m_RemoteUsbAvailable(false),
+      m_RemoteUsbState(RemoteUsbState::Unavailable),
+      m_RemoteUsbDetail(tr("Unavailable")),
       m_ParentX(0), m_ParentY(0), m_ParentW(0), m_ParentH(0),
       m_CloseWhenPointerOutside(false),
       m_ContentOffset(0),
@@ -39,57 +60,36 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent)
     setFormat(fmt);
 
     // Logical (unscaled) values — Qt 6 handles DPI automatically
-    // Win11 dark context menu style
+    // Match the application's square industrial panels.
     m_ItemHeight   = 38;
     m_Padding      = 4;
-    m_MenuWidth    = 280;
-    m_BorderRadius = 8;
+    m_MenuWidth    = 320;
     m_ShadowMargin = 8;
     m_TitleHeight  = 32;
-    m_IconAreaWidth = 24;
+    m_IconAreaWidth = 28;
 
-    // Load ModeSeven.ttf (same font as performance stats overlay)
-    int fontId = QFontDatabase::addApplicationFont(QStringLiteral(":/data/ModeSeven.ttf"));
-    QString modeSeven;
-    if (fontId >= 0) {
-        QStringList families = QFontDatabase::applicationFontFamilies(fontId);
-        if (!families.isEmpty())
-            modeSeven = families.first();
-    }
+    m_LabelFont.setFamilies(UiFont::familyChain(QStringLiteral("Manrope")));
+    m_LabelFont.setPointSize(10);
+    m_LabelFont.setWeight(QFont::DemiBold);
 
-    m_LabelFont.setFamilies(UiFont::familyChain(modeSeven));
-    m_LabelFont.setPointSize(9);
-    m_LabelFont.setWeight(QFont::Normal);
-
-    m_DetailFont = QFont(m_LabelFont);
+    m_DetailFont.setFamilies(UiFont::familyChain(QStringLiteral("DM Mono")));
     m_DetailFont.setPointSize(8);
-    m_DetailFont.setWeight(QFont::Normal);
 
-    m_TitleFont = QFont(m_LabelFont);
-    m_TitleFont.setPointSize(8);
+    m_TitleFont = m_DetailFont;
+    m_TitleFont.setPointSize(9);
     m_TitleFont.setWeight(QFont::DemiBold);
+    m_TitleFont.setLetterSpacing(QFont::AbsoluteSpacing, 1.5);
 
-    // Icon font: platform-specific
-#ifdef Q_OS_WIN
-    // Segoe MDL2 Assets — available on Windows 10/11
-    m_IconFont = QFont(QStringLiteral("Segoe MDL2 Assets"), 10);
-#else
-    // Material Icons (bundled, Apache 2.0) — cross-platform fallback
-    {
-        int iconFontId = QFontDatabase::addApplicationFont(QStringLiteral(":/data/MaterialIcons-Regular.ttf"));
-        QString materialFamily;
-        if (iconFontId >= 0) {
-            QStringList families = QFontDatabase::applicationFontFamilies(iconFontId);
-            if (!families.isEmpty())
-                materialFamily = families.first();
-        }
-        if (!materialFamily.isEmpty())
-            m_IconFont = QFont(materialFamily, 12);
-        else
-            m_IconFont = QFont(QStringLiteral("Material Icons"), 12);
+    // Reuse the same bundled Fluent 24 Regular assets as settings/toolbars.
+    // Keep QIcon instances alive so Qt can cache rasterizations for each DPI.
+    for (const QString &name : {QStringLiteral("tb-settings"), QStringLiteral("menu-position"),
+             QStringLiteral("menu-bitrate"), QStringLiteral("menu-files"),
+             QStringLiteral("cat-peripherals"), QStringLiteral("cat-display"),
+             QStringLiteral("menu-microphone"), QStringLiteral("cat-gamepad"),
+             QStringLiteral("menu-close"), QStringLiteral("menu-next"),
+             QStringLiteral("tb-back")}) {
+        m_MenuIcons.insert(name, QIcon(QStringLiteral(":/res/fluent/%1.svg").arg(name)));
     }
-#endif
-    m_IconFont.setWeight(QFont::Normal);
 
     // --- Animations ---
     m_OpacityAnim = new QPropertyAnimation(this, "opacity", this);
@@ -97,7 +97,7 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent)
 
     m_ContentSlideAnim = new QVariantAnimation(this);
     m_ContentSlideAnim->setDuration(150);
-    m_ContentSlideAnim->setEasingCurve(QEasingCurve::OutCubic);
+    m_ContentSlideAnim->setEasingCurve(QEasingCurve::OutQuad);
     connect(m_ContentSlideAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant& val) {
         m_ContentOffset = val.toReal();
         forceRepaint();
@@ -122,6 +122,11 @@ OverlayMenuPanel::OverlayMenuPanel(QWindow* parent)
         else {
             schedulePointerOutsideCheck();
         }
+    });
+
+    m_BitrateCommitTimer.setSingleShot(true);
+    connect(&m_BitrateCommitTimer, &QTimer::timeout, this, [this]() {
+        commitBitrateNow();
     });
 
     buildMenuLevels();
@@ -166,17 +171,27 @@ void OverlayMenuPanel::buildMenuLevels()
                          MenuAction::MenuActionMax, 3, true, false, false});
     top.items.push_back({tr("Bitrate"),       QString(),  MenuItemType::SubMenu,
                          MenuAction::MenuActionMax, 2, true, false, false});
-    constexpr bool separatorAfterHostFiles =
+    const bool separatorAfterHostFiles =
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
             false;
 #else
-            true;
+            !m_RemoteUsbAvailable;
 #endif
     top.items.push_back({tr("Host Files"),    m_FileMappingDetail, MenuItemType::Action,
                          MenuAction::ShowHostFiles, 0, true,
                          m_FileMappingState == FileMappingState::Available ||
                          m_FileMappingState == FileMappingState::Open,
                          separatorAfterHostFiles});
+    if (m_RemoteUsbAvailable) {
+        top.items.push_back({tr("USB Devices"), m_RemoteUsbDetail,
+                             MenuItemType::SubMenu,
+                             MenuAction::MenuActionMax, 4, true, false,
+#ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
+                             false});
+#else
+                             true});
+#endif
+    }
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
     top.items.push_back({tr("Function Tests"),
                          tr("Developer"),
@@ -217,25 +232,19 @@ void OverlayMenuPanel::buildMenuLevels()
                                MenuAction::TogglePointerRegionLock, 0, true, false, false});
     m_MenuLevels.push_back(shortcuts);
 
-    // === Level 2: Bitrate presets ===
+    // === Level 2: Bitrate (log-scale scrubber row + presets) ===
     MenuLevel bitrate;
     bitrate.title = tr("Bitrate");
-    bitrate.items.push_back({tr("1 Mbps"),    QString(), MenuItemType::Action,
-                             MenuAction::SetBitrate1000,   0, true, false, false});
-    bitrate.items.push_back({tr("2 Mbps"),    QString(), MenuItemType::Action,
-                             MenuAction::SetBitrate2000,   0, true, false, false});
-    bitrate.items.push_back({tr("5 Mbps"),    QString(), MenuItemType::Action,
-                             MenuAction::SetBitrate5000,   0, true, false, false});
-    bitrate.items.push_back({tr("10 Mbps"),   QString(), MenuItemType::Action,
-                             MenuAction::SetBitrate10000,  0, true, false, false});
-    bitrate.items.push_back({tr("20 Mbps"),   QString(), MenuItemType::Action,
-                             MenuAction::SetBitrate20000,  0, true, false, false});
-    bitrate.items.push_back({tr("30 Mbps"),   QString(), MenuItemType::Action,
-                             MenuAction::SetBitrate30000,  0, true, false, false});
-    bitrate.items.push_back({tr("50 Mbps"),   QString(), MenuItemType::Action,
-                             MenuAction::SetBitrate50000,  0, true, false, false});
-    bitrate.items.push_back({tr("100 Mbps"),  QString(), MenuItemType::Action,
-                             MenuAction::SetBitrate100000, 0, true, false, false});
+    bitrate.items.push_back({QString(), QString(), MenuItemType::Slider,
+                             MenuAction::MenuActionMax, 0, true, false, true});
+    static const int kBitratePresets[] = {
+        1000, 2000, 5000, 10000, 20000, 30000, 50000, 100000
+    };
+    for (int kbps : kBitratePresets) {
+        bitrate.items.push_back({formatBitrateKbps(kbps), QString(), MenuItemType::Action,
+                                 MenuAction::SetBitrate, 0, true, false, false,
+                                 QString::number(kbps)});
+    }
     m_MenuLevels.push_back(bitrate);
 
     // === Level 3: Overlay menu placement ===
@@ -252,6 +261,71 @@ void OverlayMenuPanel::buildMenuLevels()
     placement.items.push_back({tr("Disabled"), QString(), MenuItemType::Action,
                                MenuAction::SetMenuPlacementDisabled, 0, true, false, false});
     m_MenuLevels.push_back(placement);
+
+    // === Level 4: Remote USB devices ===
+    if (m_RemoteUsbAvailable) {
+        MenuLevel usb;
+        usb.title = tr("USB Devices");
+        if (m_RemoteUsbDevices.empty()) {
+            const QString emptyDetail =
+                m_RemoteUsbState == RemoteUsbState::Discovering
+                    ? tr("Scanning") : tr("No devices found");
+            usb.items.push_back({tr("USB Devices"), emptyDetail,
+                                 MenuItemType::Action,
+                                 MenuAction::MenuActionMax, 0, false, false,
+                                 false});
+        }
+        else {
+            for (const RemoteUsbDevice& device : m_RemoteUsbDevices) {
+                const bool active = !m_RemoteUsbActiveDeviceId.isEmpty() &&
+                                    device.id == m_RemoteUsbActiveDeviceId;
+                QString detail = device.detail;
+                if (active) {
+                    switch (m_RemoteUsbState) {
+                    case RemoteUsbState::Opening:
+                        detail = tr("Connecting — select to cancel");
+                        break;
+                    case RemoteUsbState::Open:
+                        detail = tr("Connected — select to release");
+                        break;
+                    case RemoteUsbState::Stopping:
+                        detail = tr("Releasing");
+                        break;
+                    default:
+                        break;
+                    }
+                }
+                const bool busy = m_RemoteUsbState == RemoteUsbState::Opening ||
+                                  m_RemoteUsbState == RemoteUsbState::Stopping;
+                const bool hasOpenDevice =
+                    m_RemoteUsbState == RemoteUsbState::Open &&
+                    !m_RemoteUsbActiveDeviceId.isEmpty();
+                const bool canRelease = active &&
+                    (m_RemoteUsbState == RemoteUsbState::Opening ||
+                     m_RemoteUsbState == RemoteUsbState::Open);
+                usb.items.push_back({device.label, detail,
+                                     MenuItemType::Action,
+                                     canRelease
+                                         ? MenuAction::ReleaseRemoteUsbDevice
+                                         : MenuAction::SelectRemoteUsbDevice,
+                                     0,
+                                     canRelease || (device.supported && !busy &&
+                                         (!hasOpenDevice || active)),
+                                     active,
+                                     false,
+                                     device.id});
+            }
+        }
+        m_MenuLevels.push_back(std::move(usb));
+    }
+
+    if (m_CurrentLevel >= static_cast<int>(m_MenuLevels.size())) {
+        m_CurrentLevel = 0;
+    }
+
+    // Rebuilds (gamepad set / USB refresh) wipe derived details; re-stamp
+    // the bitrate state so the scrubber row and preset checkmarks survive.
+    refreshBitrateDetails();
 }
 
 // ---------------------------------------------------------------------------
@@ -286,40 +360,190 @@ void OverlayMenuPanel::updateBitrateState(int bitrateKbps)
 {
     if (m_MenuLevels.empty()) return;
 
-    // Show current bitrate as detail text on the Bitrate category (level 0)
+    if (m_BitrateCommitTimer.isActive()) {
+        // A scrub is still pending commit; it will land shortly and update
+        // the preference. Don't clobber the slider with the stale value.
+        return;
+    }
+
+    m_BitrateKbps = qBound(kBitrateMinKbps, bitrateKbps, kBitrateMaxKbps);
+    m_CommittedBitrateKbps = m_BitrateKbps;
+    refreshBitrateDetails();
+    forceRepaint();
+}
+
+// ---------------------------------------------------------------------------
+// Bitrate slider row
+// ---------------------------------------------------------------------------
+
+QString OverlayMenuPanel::formatBitrateKbps(int kbps)
+{
+    if (kbps >= 1000000) {
+        const bool whole = kbps % 1000000 == 0;
+        return QStringLiteral("%1 Gbps").arg(kbps / 1000000.0, 0, 'f', whole ? 0 : 1);
+    }
+    if (kbps >= 1000) {
+        const bool whole = kbps % 1000 == 0;
+        return QStringLiteral("%1 Mbps").arg(kbps / 1000.0, 0, 'f', whole ? 0 : 1);
+    }
+    return QStringLiteral("%1 kbps").arg(kbps);
+}
+
+void OverlayMenuPanel::refreshBitrateDetails()
+{
+    if (m_MenuLevels.empty()) return;
+
+    // Current bitrate as detail text on the Bitrate category (level 0)
     for (auto& item : m_MenuLevels[0].items) {
         if (item.type == MenuItemType::SubMenu && item.targetLevel == 2) {
-            if (bitrateKbps >= 1000) {
-                item.detail = QString("%1 Mbps").arg(bitrateKbps / 1000);
-            } else {
-                item.detail = QString("%1 kbps").arg(bitrateKbps);
-            }
+            item.detail = formatBitrateKbps(m_BitrateKbps);
             break;
         }
     }
 
-    // Mark the active bitrate preset in level 2
+    // Mark the active preset (✓) in level 2; custom values stay unmarked
+    // since the scrubber row itself shows the exact value.
     if ((int)m_MenuLevels.size() > 2) {
-        auto actionToKbps = [](MenuAction a) -> int {
-            switch (a) {
-            case MenuAction::SetBitrate1000:   return 1000;
-            case MenuAction::SetBitrate2000:   return 2000;
-            case MenuAction::SetBitrate5000:   return 5000;
-            case MenuAction::SetBitrate10000:  return 10000;
-            case MenuAction::SetBitrate20000:  return 20000;
-            case MenuAction::SetBitrate30000:  return 30000;
-            case MenuAction::SetBitrate50000:  return 50000;
-            case MenuAction::SetBitrate100000: return 100000;
-            default: return -1;
-            }
-        };
         for (auto& item : m_MenuLevels[2].items) {
-            if (item.type == MenuItemType::Action) {
-                int kbps = actionToKbps(item.action);
-                item.detail = (kbps == bitrateKbps) ? QString::fromUtf8("\342\234\223") : QString();
+            if (item.action == MenuAction::SetBitrate) {
+                item.detail = (item.payload.toInt() == m_BitrateKbps)
+                                  ? QString::fromUtf8("\342\234\223") : QString();
             }
         }
     }
+}
+
+double OverlayMenuPanel::bitrateFraction() const
+{
+    return qBound(0.0, qLn(m_BitrateKbps / double(kBitrateMinKbps)) / kBitrateLogSpan, 1.0);
+}
+
+void OverlayMenuPanel::setBitrateKbps(int bitrateKbps)
+{
+    bitrateKbps = qBound(kBitrateMinKbps, bitrateKbps, kBitrateMaxKbps);
+    // Round to display-friendly granularity so the label doesn't flicker
+    // while scrubbing (also keeps committed values tidy).
+    if (bitrateKbps < 10000) {
+        bitrateKbps = qRound(bitrateKbps / 50.0) * 50;
+    } else if (bitrateKbps < 100000) {
+        bitrateKbps = qRound(bitrateKbps / 500.0) * 500;
+    } else {
+        bitrateKbps = qRound(bitrateKbps / 5000.0) * 5000;
+    }
+    bitrateKbps = qBound(kBitrateMinKbps, bitrateKbps, kBitrateMaxKbps);
+    if (bitrateKbps == m_BitrateKbps) return;
+
+    m_BitrateKbps = bitrateKbps;
+    refreshBitrateDetails();
+    m_BitrateCommitTimer.start(kBitrateCommitDelayMs);
+    forceRepaint();
+}
+
+void OverlayMenuPanel::setBitrateFromFraction(double fraction)
+{
+    fraction = qBound(0.0, fraction, 1.0);
+    setBitrateKbps(qRound(kBitrateMinKbps * qExp(fraction * kBitrateLogSpan)));
+}
+
+void OverlayMenuPanel::adjustBitrateStep(int direction, int multiplier)
+{
+    const double step = (kBitrateLogSpan / kBitrateLogSteps) * qMax(1, multiplier);
+    setBitrateFromFraction(bitrateFraction() + direction * step);
+}
+
+void OverlayMenuPanel::commitBitrateNow()
+{
+    m_BitrateCommitTimer.stop();
+    if (m_BitrateKbps == m_CommittedBitrateKbps) return;
+
+    m_CommittedBitrateKbps = m_BitrateKbps;
+    if (m_BitrateChangeCallback) {
+        m_BitrateChangeCallback(m_BitrateKbps);
+    }
+}
+
+void OverlayMenuPanel::selectBitratePreset(const MenuItem& item)
+{
+    // Presets snap the scrubber and commit immediately, but keep the menu
+    // open so the value can be fine-tuned right away.
+    beginInteraction();
+    m_BitrateKbps = qBound(kBitrateMinKbps, item.payload.toInt(), kBitrateMaxKbps);
+    refreshBitrateDetails();
+    commitBitrateNow();
+    forceRepaint();
+}
+
+OverlayMenuPanel::SliderRowRects OverlayMenuPanel::sliderRowRects(int contentWidth, int itemY) const
+{
+    const int textPad = 16;
+    const int buttonSize = 22;
+    const int buttonGap = 4;
+
+    SliderRowRects r;
+    r.value = QRect(textPad, itemY, 78, m_ItemHeight);
+    r.plus = QRect(contentWidth - textPad - buttonSize,
+                   itemY + (m_ItemHeight - buttonSize) / 2, buttonSize, buttonSize);
+    r.minus = QRect(r.plus.x() - buttonSize - buttonGap, r.plus.y(),
+                    buttonSize, buttonSize);
+    const int trackLeft = r.value.right() + 1 + 8;
+    const int trackRight = r.minus.x() - 6;
+    r.track = QRect(trackLeft, itemY + m_ItemHeight / 2 - 3,
+                    qMax(0, trackRight - trackLeft), 6);
+    return r;
+}
+
+OverlayMenuPanel::SliderZone OverlayMenuPanel::sliderZoneAt(const QPoint& windowPos, int rowIdx) const
+{
+    const auto& items = m_MenuLevels[m_CurrentLevel].items;
+    if (rowIdx < 0 || rowIdx >= (int)items.size()
+            || items[rowIdx].type != MenuItemType::Slider) {
+        return SliderZone::None;
+    }
+
+    // Row rects live in content coordinates; callers hand us window coords.
+    const QPoint contentPos = windowPos - QPoint(m_ShadowMargin, m_ShadowMargin);
+    const int itemY = m_TitleHeight + m_Padding + rowIdx * m_ItemHeight;
+    const SliderRowRects r = sliderRowRects(width() - 2 * m_ShadowMargin, itemY);
+
+    // Buttons win over the track so their hit area feels solid.
+    if (r.minus.adjusted(-2, -2, 2, 2).contains(contentPos)) return SliderZone::Minus;
+    if (r.plus.adjusted(-2, -2, 2, 2).contains(contentPos)) return SliderZone::Plus;
+    if (QRect(r.track.x() - 4, itemY, r.track.width() + 8, m_ItemHeight).contains(contentPos)) {
+        return SliderZone::Track;
+    }
+    return SliderZone::None;
+}
+
+void OverlayMenuPanel::gamepadAdjustSlider(int direction)
+{
+    if (!m_Visible) return;
+    const auto& items = m_MenuLevels[m_CurrentLevel].items;
+
+    // D-pad left/right anywhere in the scrubber's submenu drives the slider;
+    // focus follows so the highlight shows what is being adjusted.
+    int rowIdx = -1;
+    for (int i = 0; i < (int)items.size(); i++) {
+        if (items[i].type == MenuItemType::Slider) {
+            rowIdx = i;
+            break;
+        }
+    }
+    if (rowIdx < 0) return;
+
+    beginInteraction();
+    if (m_HoveredIndex != rowIdx) {
+        m_HoveredIndex = rowIdx;
+        m_SliderAdjustStreak = 0;
+        forceRepaint();
+    }
+    if (m_SliderAdjustClock.isValid() && m_SliderAdjustClock.elapsed() <= 350) {
+        m_SliderAdjustStreak++;
+    } else {
+        m_SliderAdjustStreak = 0;
+    }
+    m_SliderAdjustClock.start();
+    // 1x → 2x → 4x → 8x (capped) while the d-pad is held or rapidly tapped.
+    adjustBitrateStep(direction, 1 << qMin(m_SliderAdjustStreak / 2, 3));
 }
 
 void OverlayMenuPanel::updateMenuPositionState(MenuAction activePlacementAction)
@@ -360,6 +584,54 @@ void OverlayMenuPanel::updateFileMappingState(FileMappingState state, const QStr
             forceRepaint();
             break;
         }
+    }
+}
+
+void OverlayMenuPanel::updateRemoteUsbState(
+    bool available,
+    RemoteUsbState state,
+    std::vector<RemoteUsbDevice> devices,
+    const QString& activeDeviceId,
+    const QString& detail)
+{
+    m_RemoteUsbAvailable = available;
+    m_RemoteUsbState = state;
+    m_RemoteUsbDevices = std::move(devices);
+    m_RemoteUsbActiveDeviceId = activeDeviceId;
+    m_RemoteUsbDetail = detail;
+    const int previousLevel = m_CurrentLevel;
+    buildMenuLevels();
+    if (m_Visible && previousLevel == 4 && m_MenuLevels.size() > 4) {
+        m_CurrentLevel = 4;
+    }
+    if (m_Visible) {
+        repositionWindow();
+    }
+    forceRepaint();
+}
+
+void OverlayMenuPanel::dispatchActionItem(const MenuItem& item)
+{
+    // USB callbacks can synchronously rebuild the device list. Own the payload
+    // before calling out so a refresh cannot invalidate the selected identity.
+    const QString payload = item.payload;
+    if (item.action == MenuAction::SelectRemoteUsbDevice) {
+        beginInteraction();
+        if (m_RemoteUsbDeviceCallback) {
+            m_RemoteUsbDeviceCallback(payload);
+        }
+        return;
+    }
+    if (item.action == MenuAction::ReleaseRemoteUsbDevice) {
+        beginInteraction();
+        if (m_RemoteUsbReleaseCallback) {
+            m_RemoteUsbReleaseCallback();
+        }
+        return;
+    }
+    closeMenu();
+    if (m_ActionCallback) {
+        m_ActionCallback(item.action);
     }
 }
 
@@ -428,6 +700,10 @@ void OverlayMenuPanel::showInternal()
     m_CurrentLevel = 0;
     m_HoveredIndex = -1;
     m_ContentOffset = 0;
+    m_WheelAccum = 0;
+    m_SliderDragging = false;
+    m_SliderPressedZone = SliderZone::None;
+    m_SliderHotZone = SliderZone::None;
 
     // If closing animation is in progress, cancel it
     if (m_Closing) {
@@ -446,7 +722,7 @@ void OverlayMenuPanel::showInternal()
     // Slide direction depends on anchor mode
     const bool verticalSlide = m_AnchorMode == AnchorMode::TopEdge;
     const int slideDirection = (m_AnchorMode == AnchorMode::LeftEdge || verticalSlide) ? -1 : 1;
-    const int slideDistance = 40;
+    const int slideDistance = 8;
     const int targetCoordinate = verticalSlide ? m_TargetPosition.y() : m_TargetPosition.x();
     const int startCoordinate = targetCoordinate + slideDistance * slideDirection;
     m_SlideAnim->setPropertyName(verticalSlide ? QByteArrayLiteral("y") : QByteArrayLiteral("x"));
@@ -462,16 +738,16 @@ void OverlayMenuPanel::showInternal()
     raise();
 
     // Animate slide
-    m_SlideAnim->setDuration(220);
+    m_SlideAnim->setDuration(120);
     m_SlideAnim->setStartValue(startCoordinate);
     m_SlideAnim->setEndValue(targetCoordinate);
-    m_SlideAnim->setEasingCurve(QEasingCurve::OutCubic);
+    m_SlideAnim->setEasingCurve(QEasingCurve::OutQuad);
 
-    // Animate opacity: 0 → 1
-    m_OpacityAnim->setDuration(220);
+    // Short, mechanical reveal.
+    m_OpacityAnim->setDuration(120);
     m_OpacityAnim->setStartValue(0.0);
     m_OpacityAnim->setEndValue(1.0);
-    m_OpacityAnim->setEasingCurve(QEasingCurve::OutCubic);
+    m_OpacityAnim->setEasingCurve(QEasingCurve::OutQuad);
 
     m_SlideAnim->start();
     m_OpacityAnim->start();
@@ -571,7 +847,10 @@ void OverlayMenuPanel::navigateToLevel(int level)
 {
     if (level < 0 || level >= (int)m_MenuLevels.size()) return;
 
-    m_LeaveTimer.stop();
+    // Explicit navigation commits to interacting with the menu. A shorter
+    // submenu can resize out from under the pointer, so keep it open until
+    // an action or explicit dismissal instead of racing a leave timeout.
+    beginInteraction();
     bool goingForward = level > m_CurrentLevel;
     m_ContentSlideAnim->stop();
     m_ContentOffset = 0;
@@ -580,22 +859,27 @@ void OverlayMenuPanel::navigateToLevel(int level)
     m_HoveredIndex = -1;
     repositionWindow();
 
-    // Reset grace period so Leave event won't close the menu immediately
-    // (the mouse may be outside the resized window after navigation)
-    m_ShowTimer.start();
-
-    if (m_CloseWhenPointerOutside) {
-        schedulePointerOutsideCheck();
-    }
-
     if (goingForward) {
         // Forward: content slides in from right
-        m_ContentSlideAnim->setStartValue(30.0);
+        m_ContentSlideAnim->setStartValue(8.0);
         m_ContentSlideAnim->setEndValue(0.0);
         m_ContentSlideAnim->start();
     } else {
         // Back: instant switch, no animation (avoids jarring resize + slide combo)
         forceRepaint();
+    }
+}
+
+void OverlayMenuPanel::beginInteraction()
+{
+    m_CloseWhenPointerOutside = false;
+    m_LeaveTimer.stop();
+}
+
+void OverlayMenuPanel::dismissOnOutsideClick(const QPoint& globalPosition)
+{
+    if (m_Visible && !geometry().contains(globalPosition)) {
+        closeMenu();
     }
 }
 
@@ -608,6 +892,16 @@ void OverlayMenuPanel::closeMenu()
     m_Visible = false;
     m_Closing = true;
     m_HoveredIndex = -1;
+    m_WheelAccum = 0;
+
+    // A close can land mid-drag (e.g. window focus loss). Drop the drag and
+    // the mouse grab so the next show doesn't treat motion as scrubbing.
+    if (m_SliderDragging) {
+        m_SliderDragging = false;
+        setMouseGrabEnabled(false);
+    }
+    m_SliderPressedZone = SliderZone::None;
+    m_SliderHotZone = SliderZone::None;
 
     // Stop any show/level animations
     m_SlideAnim->stop();
@@ -618,19 +912,19 @@ void OverlayMenuPanel::closeMenu()
     // Animate away from the edge that opened the menu.
     const bool verticalSlide = m_AnchorMode == AnchorMode::TopEdge;
     const int slideDirection = (m_AnchorMode == AnchorMode::LeftEdge || verticalSlide) ? -1 : 1;
-    const int slideDistance = 30;
+    const int slideDistance = 8;
     const int startCoordinate = verticalSlide ? y() : x();
     m_SlideAnim->setPropertyName(verticalSlide ? QByteArrayLiteral("y") : QByteArrayLiteral("x"));
-    m_SlideAnim->setDuration(160);
+    m_SlideAnim->setDuration(120);
     m_SlideAnim->setStartValue(startCoordinate);
     m_SlideAnim->setEndValue(startCoordinate + slideDistance * slideDirection);
-    m_SlideAnim->setEasingCurve(QEasingCurve::InCubic);
+    m_SlideAnim->setEasingCurve(QEasingCurve::OutQuad);
 
     // Animate opacity: current → 0
-    m_OpacityAnim->setDuration(160);
+    m_OpacityAnim->setDuration(120);
     m_OpacityAnim->setStartValue(opacity());
     m_OpacityAnim->setEndValue(0.0);
-    m_OpacityAnim->setEasingCurve(QEasingCurve::InCubic);
+    m_OpacityAnim->setEasingCurve(QEasingCurve::OutQuad);
 
     // When fade-out completes, finalize (use disconnect to emulate single-shot for Qt 5 compat)
     auto conn = std::make_shared<QMetaObject::Connection>();
@@ -682,7 +976,7 @@ int OverlayMenuPanel::itemAtPos(const QPoint& pos) const
 void OverlayMenuPanel::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
-    p.setRenderHint(QPainter::Antialiasing);
+    p.setRenderHint(QPainter::Antialiasing, false);
     p.setRenderHint(QPainter::TextAntialiasing);
 
     int w = width();
@@ -696,64 +990,52 @@ void OverlayMenuPanel::paintEvent(QPaintEvent*)
     p.fillRect(0, 0, w, h, Qt::transparent);
     p.setCompositionMode(QPainter::CompositionMode_SourceOver);
 
-    // === Soft drop shadow ===
-    for (int i = sm; i >= 1; i--) {
-        qreal t = 1.0 - (qreal)i / sm;
-        int alpha = qRound(28.0 * t * t);
-        QPainterPath sp;
-        sp.addRoundedRect(QRectF(sm - i, sm - i + 1, cw + 2 * i, ch + 2 * i),
-                          m_BorderRadius + i, m_BorderRadius + i);
-        p.fillPath(sp, QColor(0, 0, 0, alpha));
-    }
-
-    // Move to content area
+    // The same 6px, zero-blur offset shadow used by Panel.qml.
+    p.fillRect(QRect(sm + 6, sm + 6, cw, ch), QColor(0, 0, 0, 140));
     p.save();
     p.translate(sm, sm);
+    p.fillRect(QRect(0, 0, cw, ch), MenuSurface);
+    p.setPen(QPen(MenuLine, 1));
+    p.drawRect(QRect(0, 0, cw - 1, ch - 1));
+    p.setClipRect(QRect(1, 1, cw - 2, ch - 2));
+    p.fillRect(QRect(1, 1, 4, m_TitleHeight - 1), MenuAccent);
+    p.fillRect(QRect(1, m_TitleHeight - 1, cw - 2, 1), MenuLine);
 
-    // === Win11 dark background ===
-    QPainterPath bgPath;
-    bgPath.addRoundedRect(QRectF(0, 0, cw, ch), m_BorderRadius, m_BorderRadius);
-    p.fillPath(bgPath, QColor(44, 44, 44, 242));
-
-    // Subtle border (Win11 style: thin light outline)
-    p.setPen(QPen(QColor(255, 255, 255, 20), 1.0));
-    p.drawPath(bgPath);
-
-    // Clip content
-    p.setClipPath(bgPath);
+    const auto drawIcon = [&](const QString &name, const QRect &rect, qreal opacity = 1.0) {
+        const auto icon = m_MenuIcons.constFind(name);
+        if (icon == m_MenuIcons.cend()) return;
+        p.save();
+        p.setOpacity(opacity);
+        icon.value().paint(&p, rect, Qt::AlignCenter, QIcon::Normal, QIcon::Off);
+        p.restore();
+    };
 
     // --- Title bar: back navigation on sub-levels and close on every level ---
     const auto& level = m_MenuLevels[m_CurrentLevel];
-    int textPad = (m_CurrentLevel == 0) ? 16 : 8;
+    int textPad = 16;
     int titleH = m_TitleHeight;
     const bool backHovered = m_CurrentLevel > 0 && m_HoveredIndex == -2;
     const bool closeHovered = m_HoveredIndex == -3;
 
     if (backHovered) {
-        QPainterPath hlPath;
-        hlPath.addRoundedRect(QRectF(4, 2, cw - m_TitleHeight - 4,
-                                     m_TitleHeight - 4), 4, 4);
-        p.fillPath(hlPath, QColor(255, 255, 255, 15));
+        p.fillRect(QRect(6, 1, cw - m_TitleHeight - 6, m_TitleHeight - 2), MenuHover);
     }
 
     const QRect closeRect(cw - m_TitleHeight, 0, m_TitleHeight, m_TitleHeight);
     if (closeHovered) {
-        p.fillRect(closeRect, QColor(196, 43, 28, 220));
+        p.fillRect(closeRect, MenuDanger);
     }
 
     p.setFont(m_TitleFont);
-    p.setPen(backHovered ? QColor(255, 255, 255, 230) : QColor(255, 255, 255, 160));
-    QRect titleRect(textPad, 0, cw - textPad - m_TitleHeight, m_TitleHeight);
-    const QString titleText = m_CurrentLevel > 0
-            ? QString::fromUtf8("\xe2\x97\x82 ") + level.title
-            : level.title;
-    p.drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter, titleText);
-
-    QFont closeFont = m_LabelFont;
-    closeFont.setPointSize(11);
-    p.setFont(closeFont);
-    p.setPen(QColor(255, 255, 255, closeHovered ? 255 : 170));
-    p.drawText(closeRect, Qt::AlignCenter, QString::fromUtf8("\xc3\x97"));
+    p.setPen(backHovered ? MenuAccent : MenuDim);
+    const int backWidth = m_CurrentLevel > 0 ? 28 : 0;
+    if (backWidth) {
+        drawIcon(QStringLiteral("tb-back"), QRect(textPad, (titleH - 20) / 2, 20, 20));
+    }
+    QRect titleRect(textPad + backWidth, 0, cw - textPad - backWidth - m_TitleHeight, titleH);
+    p.drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter, level.title.toUpper());
+    drawIcon(QStringLiteral("menu-close"),
+             QRect(closeRect.center().x() - 9, closeRect.center().y() - 9, 18, 18));
 
     // Apply content offset for level navigation animation
     if (m_ContentSlideAnim->state() != QAbstractAnimation::Running) {
@@ -767,63 +1049,27 @@ void OverlayMenuPanel::paintEvent(QPaintEvent*)
     const auto& items = level.items;
     int contentTop = titleH + m_Padding;
 
-    // Icon mapping for menu items
-    // Windows: Segoe MDL2 Assets code points
-    // Other platforms: Material Icons code points (bundled font)
-    auto iconForItem = [](const MenuItem& item) -> QChar {
-#ifdef Q_OS_WIN
-        // Segoe MDL2 Assets code points
+    auto iconForItem = [](const MenuItem& item) -> QString {
         if (item.type == MenuItemType::SubMenu) {
-            if (item.targetLevel == 1) return QChar(0xE713); // Settings gear
-            if (item.targetLevel == 2) return QChar(0xE7F4); // DataSense (data/speed)
-            if (item.targetLevel == 3) return QChar(0xE707); // Map pin
+            switch (item.targetLevel) {
+            case 1: return QStringLiteral("tb-settings");
+            case 2: return QStringLiteral("menu-bitrate");
+            case 3: return QStringLiteral("menu-position");
+            case 4: return QStringLiteral("cat-peripherals");
+            }
         }
         switch (item.action) {
-        case MenuAction::ToggleFullScreen:  return QChar(0xE740); // FullScreen
-        case MenuAction::ShowHostFiles:     return QChar(0xE8B7); // Folder
-        case MenuAction::ToggleMicrophone:  return QChar(0xE720); // Microphone
-        case MenuAction::ToggleGamepadMouse:  return QChar(0xE7FC); // Gamepad
-        case MenuAction::Quit:              return QChar(0xE711); // Close/X
-        case MenuAction::QuitAndExit:       return QChar(0xE711); // Close/X
-        case MenuAction::ToggleStatsOverlay:return QChar(0xE7F4); // DataSense
-        case MenuAction::ToggleMouseMode:   return QChar(0xE962); // Handwriting/pointer
-        case MenuAction::ToggleCursorHide:  return QChar(0xE76C); // PointerHand
-        case MenuAction::ToggleMinimize:    return QChar(0xE921); // Minimize
-        case MenuAction::UngrabInput:       return QChar(0xE785); // Mouse back
-        case MenuAction::PasteText:         return QChar(0xE77F); // Paste
-        case MenuAction::TogglePointerRegionLock: return QChar(0xE72E); // Lock
+        case MenuAction::ToggleFullScreen: return QStringLiteral("cat-display");
+        case MenuAction::ShowHostFiles: return QStringLiteral("menu-files");
+        case MenuAction::ToggleMicrophone: return QStringLiteral("menu-microphone");
+        case MenuAction::ToggleGamepadMouse: return QStringLiteral("cat-gamepad");
+        case MenuAction::Quit:
+        case MenuAction::QuitAndExit: return QStringLiteral("menu-close");
 #ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
-        case MenuAction::OpenStylusReplayPanel: return QChar(0xE943); // Developer tools
+        case MenuAction::OpenStylusReplayPanel: return QStringLiteral("tb-settings");
 #endif
-        default: return QChar();
+        default: return {};
         }
-#else
-        // Material Icons code points
-        if (item.type == MenuItemType::SubMenu) {
-            if (item.targetLevel == 1) return QChar(0xE8B8); // settings
-            if (item.targetLevel == 2) return QChar(0xE1B2); // speed (bitrate)
-            if (item.targetLevel == 3) return QChar(0xE55F); // place
-        }
-        switch (item.action) {
-        case MenuAction::ToggleFullScreen:  return QChar(0xE5D0); // fullscreen
-        case MenuAction::ShowHostFiles:     return QChar(0xE2C7); // folder
-        case MenuAction::ToggleMicrophone:  return QChar(0xE029); // mic
-        case MenuAction::ToggleGamepadMouse:  return QChar(0xE30F); // games (gamepad)
-        case MenuAction::Quit:              return QChar(0xE5CD); // close
-        case MenuAction::QuitAndExit:       return QChar(0xE5CD); // close
-        case MenuAction::ToggleStatsOverlay:return QChar(0xE1B2); // speed
-        case MenuAction::ToggleMouseMode:   return QChar(0xE323); // mouse (Material)
-        case MenuAction::ToggleCursorHide:  return QChar(0xE31A); // near_me (cursor arrow)
-        case MenuAction::ToggleMinimize:    return QChar(0xE15B); // remove (minimize bar)
-        case MenuAction::UngrabInput:       return QChar(0xE5C4); // arrow_back
-        case MenuAction::PasteText:         return QChar(0xE14F); // content_paste
-        case MenuAction::TogglePointerRegionLock: return QChar(0xE897); // lock
-#ifdef MOONLIGHT_ENABLE_FUNCTION_TESTS
-        case MenuAction::OpenStylusReplayPanel: return QChar(0xE869); // build
-#endif
-        default: return QChar();
-        }
-#endif
     };
 
     // Icon column: only on top-level menu
@@ -835,86 +1081,108 @@ void OverlayMenuPanel::paintEvent(QPaintEvent*)
         int itemY = contentTop + i * m_ItemHeight;
         const auto& item = items[i];
 
-        // Hover highlight — Win11 style: subtle rounded rect
+        // Square focus/hover outline and the shared 4px accent marker.
         if (i == m_HoveredIndex && item.enabled) {
-            QPainterPath hlPath;
-            hlPath.addRoundedRect(QRectF(4, itemY + 1, cw - 8, m_ItemHeight - 2), 4, 4);
-            p.fillPath(hlPath, QColor(255, 255, 255, 20));
+            const QRect row(4, itemY + 1, cw - 8, m_ItemHeight - 2);
+            p.fillRect(row, MenuHover);
+            p.setPen(QPen(MenuAccent, 1));
+            p.drawRect(row.adjusted(0, 0, -1, -1));
+            p.fillRect(QRect(4, itemY + 1, 4, m_ItemHeight - 2), MenuAccent);
         }
 
-        // Icon (drawn in left area if this level has icons)
         if (hasIcons) {
-            QChar icon = iconForItem(item);
-            if (!icon.isNull()) {
-                p.setFont(m_IconFont);
-                p.setPen(item.enabled ? QColor(255, 255, 255, 180) : QColor(255, 255, 255, 60));
-                QRect iconRect(textPad, itemY, m_IconAreaWidth, m_ItemHeight);
-                p.drawText(iconRect, Qt::AlignCenter, QString(icon));
-            }
+            drawIcon(iconForItem(item),
+                     QRect(textPad, itemY + (m_ItemHeight - 20) / 2, 20, 20),
+                     item.enabled ? (i == m_HoveredIndex ? 1.0 : 0.85) : 0.4);
         }
 
         // --- SubMenu item ---
         if (item.type == MenuItemType::SubMenu) {
             p.setFont(m_LabelFont);
-            p.setPen(item.enabled ? QColor(255, 255, 255, 230) : QColor(255, 255, 255, 80));
+            p.setPen(item.enabled ? MenuText : MenuFaint);
             QRect lr(labelX, itemY, cw - labelX - 36, m_ItemHeight);
             p.drawText(lr, Qt::AlignLeft | Qt::AlignVCenter, item.label);
 
             // Detail text (e.g., "20 Mbps")
             if (!item.detail.isEmpty()) {
                 p.setFont(m_DetailFont);
-                p.setPen(QColor(255, 255, 255, 100));
+                p.setPen(MenuDim);
                 QRect dr(cw / 2, itemY, cw / 2 - textPad - 20, m_ItemHeight);
                 p.drawText(dr, Qt::AlignRight | Qt::AlignVCenter, item.detail);
             }
 
-            // Chevron ›
-            p.setFont(m_LabelFont);
-            p.setPen(QColor(255, 255, 255, 100));
-            QRect ar(cw - textPad - 10, itemY, 10, m_ItemHeight);
-            p.drawText(ar, Qt::AlignCenter, QString::fromUtf8("\xe2\x80\xba"));
+            drawIcon(QStringLiteral("menu-next"),
+                     QRect(cw - textPad - 16, itemY + (m_ItemHeight - 16) / 2, 16, 16), 0.85);
         }
         // --- Toggle item ---
         else if (item.type == MenuItemType::Toggle) {
             p.setFont(m_LabelFont);
-            p.setPen(item.enabled ? QColor(255, 255, 255, 230) : QColor(255, 255, 255, 80));
+            p.setPen(item.enabled ? MenuText : MenuFaint);
             QRect lr(labelX, itemY, cw - labelX - 52, m_ItemHeight);
             p.drawText(lr, Qt::AlignLeft | Qt::AlignVCenter, item.label);
 
-            // Win11-style toggle switch
-            int trackW = 40, trackH = 20;
-            int trackX = cw - textPad - trackW;
-            int trackY = itemY + (m_ItemHeight - trackH) / 2;
+            // Square track and square thumb, matching HardSwitch.qml.
+            const int trackW = 40, trackH = 20;
+            const int trackX = cw - textPad - trackW;
+            const int trackY = itemY + (m_ItemHeight - trackH) / 2;
+            const QRect track(trackX, trackY, trackW, trackH);
+            p.fillRect(track, item.toggleState ? MenuAccent : MenuHover);
+            p.setPen(QPen(item.toggleState ? MenuAccent : MenuLine, 1));
+            p.drawRect(track.adjusted(0, 0, -1, -1));
+            p.fillRect(QRect(trackX + (item.toggleState ? trackW - 16 : 4),
+                             trackY + 4, 12, 12), item.toggleState ? MenuSurface : MenuDim);
+        }
+        // --- Slider item (bitrate scrubber) ---
+        else if (item.type == MenuItemType::Slider) {
+            const SliderRowRects r = sliderRowRects(cw, itemY);
+            const bool sliderFocused = i == m_HoveredIndex && item.enabled;
 
-            QPainterPath trackPath;
-            trackPath.addRoundedRect(QRectF(trackX, trackY, trackW, trackH),
-                                     trackH / 2, trackH / 2);
+            // Current value in the shared brand accent.
+            p.setFont(m_LabelFont);
+            p.setPen(sliderFocused ? MenuAccent : MenuText);
+            p.drawText(r.value, Qt::AlignLeft | Qt::AlignVCenter,
+                       formatBitrateKbps(m_BitrateKbps));
 
-            int knobR = 6;
-            if (item.toggleState) {
-                // On: accent fill (Win11 system accent blue)
-                p.fillPath(trackPath, QColor(110, 192, 232));
-                p.setPen(QPen(QColor(110, 192, 232), 1));
-                p.drawPath(trackPath);
-                p.setBrush(Qt::white);
-                p.setPen(Qt::NoPen);
-                p.drawEllipse(QPoint(trackX + trackW - trackH / 2,
-                                     trackY + trackH / 2), knobR, knobR);
-            } else {
-                // Off: transparent with white border
-                p.fillPath(trackPath, QColor(255, 255, 255, 0));
-                p.setPen(QPen(QColor(255, 255, 255, 120), 1.5));
-                p.drawPath(trackPath);
-                p.setBrush(QColor(255, 255, 255, 160));
-                p.setPen(Qt::NoPen);
-                p.drawEllipse(QPoint(trackX + trackH / 2,
-                                     trackY + trackH / 2), knobR - 1, knobR - 1);
+            // Log-scale track: hover base, accent fill up to the square thumb.
+            p.fillRect(r.track, MenuHover);
+            p.setPen(QPen(MenuLine, 1));
+            p.drawRect(r.track);
+            const double frac = bitrateFraction();
+            const int fillW = qRound(r.track.width() * frac);
+            if (fillW > 0) {
+                p.fillRect(QRect(r.track.x(), r.track.y(), fillW, r.track.height()),
+                           MenuAccent);
+            }
+            const int thumbW = 10, thumbH = 16;
+            const int thumbX = qBound(r.track.x() - thumbW / 2,
+                                      r.track.x() + fillW - thumbW / 2,
+                                      r.track.x() + r.track.width() - thumbW / 2);
+            const QRect thumb(thumbX, itemY + (m_ItemHeight - thumbH) / 2, thumbW, thumbH);
+            p.fillRect(thumb, m_SliderDragging ? MenuAccent : MenuText);
+            p.setPen(QPen(MenuLine, 1));
+            p.drawRect(thumb);
+
+            // −/+ steppers with hover/pressed feedback
+            const QRect zones[] = { r.minus, r.plus };
+            const SliderZone zoneIds[] = { SliderZone::Minus, SliderZone::Plus };
+            const QString glyphs[] = { QStringLiteral("-"), QStringLiteral("+") };
+            for (int z = 0; z < 2; z++) {
+                const bool hot = sliderFocused && m_SliderHotZone == zoneIds[z];
+                const bool pressed = m_SliderPressedZone == zoneIds[z];
+                if (hot || pressed) {
+                    p.fillRect(zones[z], pressed ? MenuAccent : MenuHover);
+                }
+                p.setPen(QPen(pressed ? MenuAccent : MenuLine, 1));
+                p.drawRect(zones[z]);
+                p.setFont(m_LabelFont);
+                p.setPen(hot || pressed ? MenuText : MenuDim);
+                p.drawText(zones[z], Qt::AlignCenter, glyphs[z]);
             }
         }
         // --- Action item ---
         else if (item.type == MenuItemType::Action) {
             p.setFont(m_LabelFont);
-            p.setPen(item.enabled ? QColor(255, 255, 255, 230) : QColor(255, 255, 255, 80));
+            p.setPen(item.enabled ? MenuText : MenuFaint);
 
             bool hasLongDetail = !item.detail.isEmpty() && item.detail.length() > 3;
             bool hasShortDetail = !item.detail.isEmpty() && item.detail.length() <= 3;
@@ -925,7 +1193,7 @@ void OverlayMenuPanel::paintEvent(QPaintEvent*)
                 p.drawText(lb, Qt::AlignLeft | Qt::AlignBottom, item.label);
 
                 p.setFont(m_DetailFont);
-                p.setPen(QColor(255, 255, 255, 90));
+                p.setPen(MenuDim);
                 QRect sr(labelX, itemY + topH, cw - labelX - textPad, m_ItemHeight - topH);
                 p.drawText(sr, Qt::AlignLeft | Qt::AlignTop, item.detail);
             } else {
@@ -942,9 +1210,9 @@ void OverlayMenuPanel::paintEvent(QPaintEvent*)
                 p.drawText(lr, Qt::AlignLeft | Qt::AlignVCenter, item.label);
 
                 if (hasShortDetail) {
-                    // Short status text or checkmark — Win11 accent color
+                    // Short status text or checkmark in the shared brand accent.
                     p.setFont(m_DetailFont);
-                    p.setPen(QColor(110, 192, 232));
+                    p.setPen(MenuAccent);
                     QRect cr(cw - textPad - detailWidth, itemY,
                              detailWidth, m_ItemHeight);
                     p.drawText(cr, Qt::AlignRight | Qt::AlignVCenter, item.detail);
@@ -954,14 +1222,14 @@ void OverlayMenuPanel::paintEvent(QPaintEvent*)
         // --- Back item (fallback, normally handled by title bar) ---
         else if (item.type == MenuItemType::Back) {
             p.setFont(m_DetailFont);
-            p.setPen(QColor(255, 255, 255, 120));
+            p.setPen(MenuDim);
             QRect lr(labelX, itemY, cw - labelX - textPad, m_ItemHeight);
             p.drawText(lr, Qt::AlignLeft | Qt::AlignVCenter, item.label);
         }
 
         // Group separator — only where explicitly flagged
         if (item.separatorAfter && i < (int)items.size() - 1) {
-            p.setPen(QPen(QColor(255, 255, 255, 18), 1));
+            p.setPen(QPen(MenuLine, 1));
             int sepY = itemY + m_ItemHeight - 1;
             p.drawLine(labelX, sepY, cw - textPad, sepY);
         }
@@ -978,12 +1246,31 @@ void OverlayMenuPanel::paintEvent(QPaintEvent*)
 void OverlayMenuPanel::mouseMoveEvent(QMouseEvent* event)
 {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    int newIdx = itemAtPos(event->position().toPoint());
+    const QPoint pos = event->position().toPoint();
 #else
-    int newIdx = itemAtPos(event->pos());
+    const QPoint pos = event->pos();
 #endif
-    if (newIdx != m_HoveredIndex) {
+
+    if (m_SliderDragging) {
+        // Keep scrubbing even when the pointer leaves the panel (mouse grab).
+        const auto& items = m_MenuLevels[m_CurrentLevel].items;
+        for (int i = 0; i < (int)items.size(); i++) {
+            if (items[i].type != MenuItemType::Slider) continue;
+            const int itemY = m_TitleHeight + m_Padding + i * m_ItemHeight;
+            const SliderRowRects r = sliderRowRects(width() - 2 * m_ShadowMargin, itemY);
+            const double frac = (pos.x() - m_ShadowMargin - r.track.x())
+                                    / double(r.track.width());
+            setBitrateFromFraction(frac);
+            break;
+        }
+        return;
+    }
+
+    const int newIdx = itemAtPos(pos);
+    const SliderZone hotZone = sliderZoneAt(pos, newIdx);
+    if (newIdx != m_HoveredIndex || hotZone != m_SliderHotZone) {
         m_HoveredIndex = newIdx;
+        m_SliderHotZone = hotZone;
         setCursor((m_HoveredIndex >= 0 || m_HoveredIndex == -2 || m_HoveredIndex == -3)
                           ? Qt::PointingHandCursor
                           : Qt::ArrowCursor);
@@ -994,12 +1281,14 @@ void OverlayMenuPanel::mouseMoveEvent(QMouseEvent* event)
 void OverlayMenuPanel::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() != Qt::LeftButton) return;
+    beginInteraction();
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    int idx = itemAtPos(event->position().toPoint());
+    const QPoint pos = event->position().toPoint();
 #else
-    int idx = itemAtPos(event->pos());
+    const QPoint pos = event->pos();
 #endif
+    int idx = itemAtPos(pos);
 
     if (idx == -3) {
         closeMenu();
@@ -1029,12 +1318,34 @@ void OverlayMenuPanel::mousePressEvent(QMouseEvent* event)
         break;
 
     case MenuItemType::Action:
-    {
-        MenuAction action = item.action;
-        closeMenu();
-        if (m_ActionCallback) {
-            m_ActionCallback(action);
+        if (item.action == MenuAction::SetBitrate) {
+            selectBitratePreset(item);
+            break;
         }
+        dispatchActionItem(item);
+        break;
+
+    case MenuItemType::Slider:
+    {
+        const SliderZone zone = sliderZoneAt(pos, idx);
+        m_SliderPressedZone = zone;
+        m_SliderHotZone = zone;
+        if (zone == SliderZone::Minus) {
+            adjustBitrateStep(-1, 1);
+        }
+        else if (zone == SliderZone::Plus) {
+            adjustBitrateStep(1, 1);
+        }
+        else if (zone == SliderZone::Track) {
+            const int itemY = m_TitleHeight + m_Padding + idx * m_ItemHeight;
+            const SliderRowRects r = sliderRowRects(width() - 2 * m_ShadowMargin, itemY);
+            m_SliderDragging = true;
+            setMouseGrabEnabled(true);
+            const double frac = (pos.x() - m_ShadowMargin - r.track.x())
+                                    / double(r.track.width());
+            setBitrateFromFraction(frac);
+        }
+        forceRepaint();
         break;
     }
 
@@ -1052,6 +1363,58 @@ void OverlayMenuPanel::mousePressEvent(QMouseEvent* event)
     }
 }
 
+void OverlayMenuPanel::mouseReleaseEvent(QMouseEvent* event)
+{
+    Q_UNUSED(event);
+    if (!m_SliderDragging && m_SliderPressedZone == SliderZone::None) return;
+
+    if (m_SliderDragging) {
+        m_SliderDragging = false;
+        setMouseGrabEnabled(false);
+    }
+    m_SliderPressedZone = SliderZone::None;
+    m_SliderHotZone = SliderZone::None;
+    // The commit timer keeps running; the value lands once the pointer idles.
+    forceRepaint();
+}
+
+void OverlayMenuPanel::wheelEvent(QWheelEvent* event)
+{
+    if (!m_Visible) {
+        event->ignore();
+        return;
+    }
+
+    // QWheelEvent::pos() is unavailable on the SteamLink Qt 5.14 build;
+    // position() exists everywhere from 5.14 on.
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+    const QPoint pos = event->position().toPoint();
+#else
+    const QPoint pos = event->pos();
+#endif
+    const int idx = itemAtPos(pos);
+    if (idx < 0 || idx >= (int)m_MenuLevels[m_CurrentLevel].items.size()
+            || m_MenuLevels[m_CurrentLevel].items[idx].type != MenuItemType::Slider) {
+        // Don't carry a partial notch into a later scrub session.
+        m_WheelAccum = 0;
+        event->ignore();
+        return;
+    }
+
+    // Wheeling the scrubber counts as interaction; don't race the leave timer.
+    beginInteraction();
+
+    // Accumulate high-resolution wheel deltas; one notch = one fine step.
+    m_WheelAccum += event->angleDelta().y() / 120.0;
+    int notches = 0;
+    while (m_WheelAccum >= 1.0) { notches++; m_WheelAccum -= 1.0; }
+    while (m_WheelAccum <= -1.0) { notches--; m_WheelAccum += 1.0; }
+    if (notches != 0) {
+        adjustBitrateStep(notches > 0 ? 1 : -1, qAbs(notches));
+    }
+    event->accept();
+}
+
 // ---------------------------------------------------------------------------
 // Gamepad navigation
 // ---------------------------------------------------------------------------
@@ -1059,6 +1422,7 @@ void OverlayMenuPanel::mousePressEvent(QMouseEvent* event)
 void OverlayMenuPanel::gamepadMoveUp()
 {
     if (!m_Visible) return;
+    beginInteraction();
     const auto& items = m_MenuLevels[m_CurrentLevel].items;
     if (items.empty()) return;
 
@@ -1083,6 +1447,7 @@ void OverlayMenuPanel::gamepadMoveUp()
 void OverlayMenuPanel::gamepadMoveDown()
 {
     if (!m_Visible) return;
+    beginInteraction();
     const auto& items = m_MenuLevels[m_CurrentLevel].items;
     if (items.empty()) return;
 
@@ -1132,14 +1497,16 @@ void OverlayMenuPanel::gamepadSelect()
         navigateToLevel(item.targetLevel);
         break;
     case MenuItemType::Action:
-    {
-        MenuAction action = item.action;
-        closeMenu();
-        if (m_ActionCallback) {
-            m_ActionCallback(action);
+        if (item.action == MenuAction::SetBitrate) {
+            selectBitratePreset(item);
+            break;
         }
+        dispatchActionItem(item);
         break;
-    }
+    case MenuItemType::Slider:
+        // A confirms — flush a pending scrub immediately.
+        commitBitrateNow();
+        break;
     case MenuItemType::Toggle:
     {
         auto& mutableItem = m_MenuLevels[m_CurrentLevel].items[m_HoveredIndex];

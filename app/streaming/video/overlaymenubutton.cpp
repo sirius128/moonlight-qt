@@ -8,6 +8,19 @@
 #include <QInputDevice>
 #endif
 
+#ifdef Q_OS_DARWIN
+#include "overlayeventmonitor_mac.h"
+#endif
+
+#ifdef HAVE_LINUX_DISPLAY_EVENT_MONITOR
+#include "overlayeventmonitor_linux.h"
+#endif
+
+#ifdef Q_OS_WIN32
+#include <windows.h>
+#include <commctrl.h>
+#endif
+
 namespace {
 QPoint globalMousePosition(QMouseEvent* event)
 {
@@ -28,6 +41,132 @@ bool mouseEventComesFromTouch(QMouseEvent* event)
 #endif
 }
 }
+
+#ifdef Q_OS_WIN32
+struct OverlayMenuButton::NativeEventMonitor
+{
+    using SetWindowSubclassFn = BOOL (WINAPI *)(HWND, SUBCLASSPROC, UINT_PTR, DWORD_PTR);
+    using RemoveWindowSubclassFn = BOOL (WINAPI *)(HWND, SUBCLASSPROC, UINT_PTR);
+    using DefSubclassProcFn = LRESULT (WINAPI *)(HWND, UINT, WPARAM, LPARAM);
+
+    struct SubclassApis
+    {
+        SubclassApis()
+        {
+            module = LoadLibraryW(L"comctl32.dll");
+            if (!module) {
+                return;
+            }
+            setWindowSubclass = reinterpret_cast<SetWindowSubclassFn>(
+                    GetProcAddress(module, "SetWindowSubclass"));
+            removeWindowSubclass = reinterpret_cast<RemoveWindowSubclassFn>(
+                    GetProcAddress(module, "RemoveWindowSubclass"));
+            defSubclassProc = reinterpret_cast<DefSubclassProcFn>(
+                    GetProcAddress(module, "DefSubclassProc"));
+        }
+
+        bool available() const
+        {
+            return setWindowSubclass && removeWindowSubclass && defSubclassProc;
+        }
+
+        HMODULE module = nullptr;
+        SetWindowSubclassFn setWindowSubclass = nullptr;
+        RemoveWindowSubclassFn removeWindowSubclass = nullptr;
+        DefSubclassProcFn defSubclassProc = nullptr;
+    };
+
+    explicit NativeEventMonitor(OverlayMenuButton* owner) : owner(owner) {}
+
+    ~NativeEventMonitor()
+    {
+        detach();
+    }
+
+    static SubclassApis& apis()
+    {
+        static SubclassApis value;
+        return value;
+    }
+
+    static bool shouldWakeForMessage(UINT message)
+    {
+        if ((message >= WM_MOUSEFIRST && message <= WM_MOUSELAST) ||
+                (message >= 0x0241 && message <= 0x0253)) {
+            return true;
+        }
+
+        switch (message) {
+        case WM_MOUSEHOVER:
+        case WM_MOUSELEAVE:
+        case WM_NCMOUSEMOVE:
+        case WM_NCMOUSEHOVER:
+        case WM_NCMOUSELEAVE:
+        case WM_CAPTURECHANGED:
+        case WM_TOUCH:
+        case WM_GESTURE:
+        case WM_GESTURENOTIFY:
+        case WM_PAINT:
+        case WM_SHOWWINDOW:
+        case WM_WINDOWPOSCHANGED:
+        case WM_DPICHANGED:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    static LRESULT CALLBACK subclassProc(HWND hwnd, UINT message,
+                                         WPARAM wParam, LPARAM lParam,
+                                         UINT_PTR, DWORD_PTR refData)
+    {
+        auto* monitor = reinterpret_cast<NativeEventMonitor*>(refData);
+        if (monitor && monitor->owner && shouldWakeForMessage(message)) {
+            monitor->owner->requestEventProcessing();
+        }
+
+        if (message == WM_NCDESTROY && monitor) {
+            monitor->hwnd = nullptr;
+        }
+
+        return apis().defSubclassProc(hwnd, message, wParam, lParam);
+    }
+
+    bool attach(HWND newHwnd)
+    {
+        if (hwnd == newHwnd && hwnd != nullptr) {
+            return true;
+        }
+
+        detach();
+        if (!newHwnd || !apis().available()) {
+            return false;
+        }
+
+        if (!apis().setWindowSubclass(newHwnd, subclassProc, kSubclassId,
+                                      reinterpret_cast<DWORD_PTR>(this))) {
+            return false;
+        }
+
+        hwnd = newHwnd;
+        return true;
+    }
+
+    void detach()
+    {
+        if (hwnd && apis().available()) {
+            apis().removeWindowSubclass(hwnd, subclassProc, kSubclassId);
+        }
+        hwnd = nullptr;
+    }
+
+    bool isAttached() const { return hwnd != nullptr; }
+
+    static constexpr UINT_PTR kSubclassId = 0x4D4C4F42; // "MLOB"
+    OverlayMenuButton* owner;
+    HWND hwnd = nullptr;
+};
+#endif
 
 OverlayMenuButton::OverlayMenuButton(QWindow* parent)
     : QRasterWindow(parent),
@@ -50,7 +189,106 @@ OverlayMenuButton::OverlayMenuButton(QWindow* parent)
 
 OverlayMenuButton::~OverlayMenuButton()
 {
+#if defined(Q_OS_WIN32) || defined(Q_OS_DARWIN) || \
+        defined(HAVE_LINUX_DISPLAY_EVENT_MONITOR)
+    m_NativeEventMonitor.reset();
+#endif
 }
+
+void OverlayMenuButton::setEventWakeCallback(EventWakeCallback cb)
+{
+    std::lock_guard<std::mutex> lock(m_EventWakeCallbackMutex);
+    m_EventWakeCallback = std::move(cb);
+}
+
+bool OverlayMenuButton::needsEventProcessing() const
+{
+    if (!m_ButtonVisible.load(std::memory_order_acquire)) {
+        return false;
+    }
+
+#if defined(Q_OS_WIN32) || defined(Q_OS_DARWIN) || \
+        defined(HAVE_LINUX_DISPLAY_EVENT_MONITOR)
+    // If native monitoring is unavailable, retain the old continuous-pump
+    // behavior so the button never becomes unusable on an unusual system.
+    return !m_NativeEventMonitor || !m_NativeEventMonitor->isAttached() ||
+           m_EventWakeState.isPending();
+#else
+    return true;
+#endif
+}
+
+void OverlayMenuButton::beginEventProcessing()
+{
+    m_EventWakeState.take();
+}
+
+void OverlayMenuButton::finishEventProcessing()
+{
+#ifdef HAVE_LINUX_DISPLAY_EVENT_MONITOR
+    if (m_NativeEventMonitor) {
+        m_NativeEventMonitor->finishEventProcessing();
+    }
+#endif
+}
+
+void OverlayMenuButton::requestEventProcessing()
+{
+    if (!m_ButtonVisible.load(std::memory_order_acquire)) {
+        return;
+    }
+
+    if (m_EventWakeState.request()) {
+        std::lock_guard<std::mutex> lock(m_EventWakeCallbackMutex);
+        if (m_ButtonVisible.load(std::memory_order_acquire) && m_EventWakeCallback) {
+            m_EventWakeCallback();
+        }
+    }
+}
+
+void OverlayMenuButton::requestButtonUpdate()
+{
+    requestEventProcessing();
+    requestUpdate();
+}
+
+#if defined(Q_OS_WIN32) || defined(Q_OS_DARWIN) || \
+        defined(HAVE_LINUX_DISPLAY_EVENT_MONITOR)
+void OverlayMenuButton::ensureNativeEventMonitor()
+{
+    if (!m_NativeEventMonitor) {
+#if defined(Q_OS_WIN32)
+        m_NativeEventMonitor = std::make_unique<NativeEventMonitor>(this);
+#elif defined(Q_OS_DARWIN)
+        m_NativeEventMonitor = std::make_unique<MacOverlayEventMonitor>([this]() {
+            requestEventProcessing();
+        });
+#elif defined(HAVE_LINUX_DISPLAY_EVENT_MONITOR)
+        m_NativeEventMonitor = std::make_unique<LinuxDisplayEventMonitor>([this]() {
+            requestEventProcessing();
+        });
+#endif
+    }
+
+#ifdef Q_OS_WIN32
+    const auto nativeWindow = reinterpret_cast<HWND>(winId());
+#elif defined(Q_OS_DARWIN)
+    void* nativeWindow = reinterpret_cast<void*>(winId());
+#elif defined(HAVE_LINUX_DISPLAY_EVENT_MONITOR)
+    const auto nativeWindow = static_cast<std::uintptr_t>(winId());
+#endif
+    if (!m_NativeEventMonitor->attach(nativeWindow)) {
+        qWarning("Failed to monitor native overlay button events; using continuous Qt event processing");
+    }
+}
+
+void OverlayMenuButton::detachNativeEventMonitor()
+{
+    if (m_NativeEventMonitor) {
+        m_NativeEventMonitor->detach();
+    }
+}
+#endif
 
 void OverlayMenuButton::repositionTo(int parentX, int parentY, int parentW, int parentH)
 {
@@ -86,21 +324,33 @@ void OverlayMenuButton::repositionTo(int parentX, int parentY, int parentW, int 
     }
 
     setGeometry(QRect(clampToParent(newPosition), QSize(kButtonSize, kButtonSize)));
+    if (m_ButtonVisible.load(std::memory_order_acquire)) {
+        requestEventProcessing();
+    }
 }
 
 void OverlayMenuButton::showButton(int parentX, int parentY, int parentW, int parentH)
 {
     repositionTo(parentX, parentY, parentW, parentH);
-    m_ButtonVisible = true;
+    m_ButtonVisible.store(true, std::memory_order_release);
     show();
+#if defined(Q_OS_WIN32) || defined(Q_OS_DARWIN) || \
+        defined(HAVE_LINUX_DISPLAY_EVENT_MONITOR)
+    ensureNativeEventMonitor();
+#endif
     raise();
-    requestUpdate();
+    requestButtonUpdate();
 }
 
 void OverlayMenuButton::hideButton()
 {
     cancelInteraction();
-    m_ButtonVisible = false;
+    m_ButtonVisible.store(false, std::memory_order_release);
+#if defined(Q_OS_WIN32) || defined(Q_OS_DARWIN) || \
+        defined(HAVE_LINUX_DISPLAY_EVENT_MONITOR)
+    detachNativeEventMonitor();
+#endif
+    m_EventWakeState.clear();
     unsetCursor();
     hide();
 }
@@ -182,7 +432,7 @@ void OverlayMenuButton::cancelInteraction()
         // Touch input has no hover state after the finger is released.
         m_Hovered = false;
         setOpacity(0.35);
-        requestUpdate();
+        requestButtonUpdate();
     }
 
     if (m_Hovered) {
@@ -258,7 +508,7 @@ void OverlayMenuButton::mouseMoveEvent(QMouseEvent* event)
     if (!m_Hovered) {
         m_Hovered = true;
         setOpacity(0.95);
-        requestUpdate();
+        requestButtonUpdate();
     }
 
     if (m_InputSource == InputSource::None) {
@@ -383,7 +633,7 @@ bool OverlayMenuButton::event(QEvent* ev)
     if (ev->type() == QEvent::Leave) {
         m_Hovered = false;
         setOpacity(0.35);
-        requestUpdate();
+        requestButtonUpdate();
     }
     else if (ev->type() == QEvent::UngrabMouse && m_InputSource == InputSource::Mouse) {
         cancelInteraction();

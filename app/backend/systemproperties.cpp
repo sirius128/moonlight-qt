@@ -61,6 +61,14 @@ SystemProperties::SystemProperties()
     isDarwin = false;
 #endif
 
+#if defined(Q_OS_WIN32) || defined(Q_OS_DARWIN)
+    // Windows attaches to an external usbipd-win server; macOS ships the
+    // moonlight-usbd helper (usbipdcpp) inside the app bundle. The Linux
+    // usbip-host backend and the Android service are future work; see the
+    // platform table in docs/remote-usb-reverse-tunnel.md.
+    usbForwardingAvailable = true;
+#endif
+
     QString nativeArch = QSysInfo::currentCpuArchitecture();
 
 #ifdef Q_OS_WIN32

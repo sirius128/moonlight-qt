@@ -35,6 +35,7 @@
 
 using Microsoft::WRL::ComPtr;
 #elif defined(Q_OS_MACOS)
+#include "dualsensehapticsmac.h"
 #include "renderers/coreaudio/TPCircularBuffer.h"
 
 #include <AudioToolbox/AudioToolbox.h>
@@ -799,11 +800,21 @@ struct DualSenseHapticsRenderer::Impl
     bool streamStarted = false;
     std::chrono::steady_clock::time_point nextEndpointProbe{};
 
+#ifdef Q_OS_MACOS
+    // The analyzed IR path is independent of the authored PCM one: it drives the
+    // pad's own actuators through CoreHaptics, so it exists whether or not a
+    // four-channel USB endpoint was found.
+    std::unique_ptr<MacDualSenseHapticsRenderer> macRenderer;
+#endif
+
     // Keep this last: run() may access every member as soon as the thread starts.
     std::thread worker;
 
     Impl() : endpoint(createHapticsEndpoint())
     {
+#ifdef Q_OS_MACOS
+        macRenderer = std::make_unique<MacDualSenseHapticsRenderer>();
+#endif
         if (endpoint != nullptr) {
             worker = std::thread([this] { run(); });
         }
@@ -976,4 +987,37 @@ void DualSenseHapticsRenderer::submit(const LI_DS5_HAPTICS_PCM_FRAME& frame)
         m_Impl->queue.emplace_back(std::move(packet));
     }
     m_Impl->condition.notify_one();
+}
+
+void DualSenseHapticsRenderer::setControllerTarget(int controllerNumber)
+{
+#ifdef Q_OS_MACOS
+    if (m_Impl->macRenderer != nullptr) {
+        m_Impl->macRenderer->setControllerTarget(controllerNumber);
+    }
+#else
+    (void)controllerNumber;
+#endif
+}
+
+void DualSenseHapticsRenderer::reset()
+{
+#ifdef Q_OS_MACOS
+    if (m_Impl->macRenderer != nullptr) {
+        m_Impl->macRenderer->reset();
+    }
+#endif
+}
+
+bool DualSenseHapticsRenderer::submit(const LI_DS5_HAPTICS_IR_FRAME_V2& frame,
+                                      bool& startedNative)
+{
+#ifdef Q_OS_MACOS
+    return m_Impl->macRenderer != nullptr &&
+           m_Impl->macRenderer->submit(frame, startedNative);
+#else
+    (void)frame;
+    startedNative = false;
+    return false;
+#endif
 }

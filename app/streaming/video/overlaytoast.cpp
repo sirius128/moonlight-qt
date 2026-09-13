@@ -1,6 +1,7 @@
 #include "overlaytoast.h"
 #include "uifont.h"
 
+#include <QGuiApplication>
 #include <QScreen>
 #include <QFontMetrics>
 
@@ -38,12 +39,12 @@ OverlayToast::OverlayToast(QWindow* parent)
     // Manrope 由 main.cpp 注册进 QFontDatabase，进程内哪儿都能用；它没有中文字形，
     // 所以后面按平台补 CJK 回退（提示文案是会被翻译的）。
     m_Font.setFamilies(UiFont::familyChain(QStringLiteral("Manrope")));
-    m_Font.setPointSize(11);
+    // Use a fixed logical pixel size. Point sizes are resolved through the
+    // platform's font DPI, which is not the same thing as Qt's UI scale on
+    // Linux and can make this standalone window unexpectedly large.
+    m_Font.setPixelSize(15); // approximately equivalent to 11pt at 96 DPI
     m_Font.setWeight(QFont::DemiBold);
     m_Font.setStyleHint(QFont::SansSerif);
-
-    m_DismissTimer.setSingleShot(true);
-    connect(&m_DismissTimer, &QTimer::timeout, this, &OverlayToast::startFadeOut);
 
     m_FadeAnimation = new QPropertyAnimation(this, "opacity", this);
     // 淡出跟着 Theme 的动效时长走：这套风格的动效更短更机械
@@ -52,10 +53,38 @@ OverlayToast::OverlayToast(QWindow* parent)
     m_FadeAnimation->setEndValue(0.0);
     connect(m_FadeAnimation, &QPropertyAnimation::finished,
             this, &OverlayToast::onFadeFinished);
+
+    m_Clock.start();
 }
 
 OverlayToast::~OverlayToast()
 {
+    dismissImmediately();
+}
+
+bool OverlayToast::needsEventProcessing() const
+{
+    return m_EventState.needsEventProcessing(m_Clock.elapsed());
+}
+
+int OverlayToast::nextEventDelayMs() const
+{
+    return m_EventState.nextEventDelayMs(m_Clock.elapsed());
+}
+
+void OverlayToast::beginEventProcessing()
+{
+    if (m_EventState.beginEventProcessing(m_Clock.elapsed())) {
+        startFadeOut();
+    }
+}
+
+void OverlayToast::dismissImmediately()
+{
+    m_FadeAnimation->stop();
+    m_EventState.cancel();
+    hide();
+    setOpacity(1.0);
 }
 
 void OverlayToast::showToast(int parentX, int parentY, int parentW, int parentH,
@@ -63,9 +92,21 @@ void OverlayToast::showToast(int parentX, int parentY, int parentW, int parentH,
 {
     m_Message = message;
 
-    // Stop any ongoing fade / dismiss
-    m_DismissTimer.stop();
+    // This is an independent top-level window, so make its font/rendering
+    // context follow the stream window's monitor before measuring text.
+    const QPoint parentCenter(parentX + parentW / 2, parentY + parentH / 2);
+    QScreen* targetScreen = QGuiApplication::screenAt(parentCenter);
+    if (targetScreen == nullptr) {
+        targetScreen = QGuiApplication::primaryScreen();
+    }
+    if (targetScreen != nullptr && screen() != targetScreen) {
+        setScreen(targetScreen);
+    }
+
+    // Stop any ongoing fade before replacing the toast. The state deadline is
+    // reset below, so an expired older toast cannot dismiss the new message.
     m_FadeAnimation->stop();
+    m_EventState.show(m_Clock.elapsed(), durationMs);
     setOpacity(1.0);
 
     // Calculate dimensions
@@ -93,17 +134,19 @@ void OverlayToast::showToast(int parentX, int parentY, int parentW, int parentH,
     show();
     raise();
     requestUpdate();
-
-    m_DismissTimer.start(durationMs);
 }
 
 void OverlayToast::startFadeOut()
 {
+    if (!m_EventState.isFading()) {
+        return;
+    }
     m_FadeAnimation->start();
 }
 
 void OverlayToast::onFadeFinished()
 {
+    m_EventState.finishFade();
     hide();
     setOpacity(1.0);
 }

@@ -87,6 +87,16 @@ unix:if(!macx|disable-prebuilts) {
         PKGCONFIG += opus
     }
 
+    # Desktop overlay event monitors are independent of the video decoder.
+    # Keep these checks outside !disable-ffmpeg so software-only builds can
+    # still avoid polling Qt while the floating button is idle.
+    linux:!config_SL {
+        !disable-x11:packagesExist(xcb) {
+            DEFINES += HAVE_XCB_DISPLAY_MONITOR
+            PKGCONFIG += xcb
+        }
+    }
+
     !disable-ffmpeg {
         packagesExist(libavcodec) {
             PKGCONFIG += libavcodec libavutil libswscale
@@ -204,7 +214,10 @@ macx {
         CONFIG += discord-rpc libplacebo
     }
 
-    LIBS += -lobjc -framework Accelerate -framework AudioToolbox -framework VideoToolbox -framework AVFoundation -framework CoreVideo -framework CoreGraphics -framework CoreMedia -framework AppKit -framework UniformTypeIdentifiers -framework Metal -framework MetalFx -framework QuartzCore
+    LIBS += -lobjc -framework Accelerate -framework AudioToolbox -framework VideoToolbox -framework AVFoundation -framework CoreVideo -framework CoreGraphics -framework CoreMedia -framework AppKit -framework UniformTypeIdentifiers -framework Metal -framework MetalFx -framework QuartzCore -framework GameController -framework CoreHaptics
+
+    SOURCES += streaming/audio/dualsensehapticsmac.mm
+    HEADERS += streaming/audio/dualsensehapticsmac.h
 
     # For the CoreAudio renderer and libsoundio
     LIBS += -framework CoreAudio -framework AudioUnit
@@ -271,6 +284,10 @@ SOURCES += \
     streaming/video/overlaymenubutton.cpp \
     streaming/video/overlaytoast.cpp \
     backend/systemproperties.cpp \
+    backend/usbforwardingenvironment.cpp \
+    backend/usbforwardingbackend.cpp \
+    backend/usbforwardinglocalserver.cpp \
+    backend/usbforwardingtunnel.cpp \
     wm.cpp \
     imageutils.cpp \
     streaming/video/videoenhancement.cpp
@@ -279,6 +296,10 @@ HEADERS += \
     SDL_compat.h \
     backend/nvaddress.h \
     backend/nvapp.h \
+    backend/usbforwardingenvironment.h \
+    backend/usbforwardingbackend.h \
+    backend/usbforwardinglocalserver.h \
+    backend/usbforwardingtunnel.h \
     cli/pair.h \
     settings/compatfetcher.h \
     settings/devicelocalsettings.h \
@@ -289,6 +310,7 @@ HEADERS += \
     backend/identitymanager.h \
     backend/nvcomputer.h \
     backend/nvhttp.h \
+    backend/usbforwardingcapability.h \
     backend/nvpairingmanager.h \
     backend/computermanager.h \
     backend/boxartmanager.h \
@@ -311,6 +333,7 @@ HEADERS += \
     streaming/audio/renderers/renderer.h \
     streaming/audio/dualsensehaptics.h \
     streaming/audio/dualsensehapticscalibration.h \
+    streaming/audio/dualsensehapticsrouting.h \
     streaming/audio/dualsensehapticsstream.h \
     streaming/audio/renderers/sdl.h \
     gui/computermodel.h \
@@ -330,7 +353,9 @@ HEADERS += \
     streaming/video/overlaymanager.h \
     streaming/video/overlaymenupanel.h \
     streaming/video/overlaybuttonposition.h \
+    streaming/video/overlayeventwakestate.h \
     streaming/video/overlaymenubutton.h \
+    streaming/video/overlaytoasteventstate.h \
     streaming/video/overlaytoast.h \
     backend/systemproperties.h \
     imageutils.h \
@@ -345,8 +370,20 @@ HEADERS += \
 
 # 把红绿灯沉到我们自己那条 bar 的中线上，顺带让 AppKit 的标题栏拖动区覆盖整条 bar
 macx {
-    HEADERS += gui/macwindowchrome.h
-    SOURCES += gui/macwindowchrome.mm
+    HEADERS += \
+        gui/macwindowchrome.h \
+        streaming/video/macqteventpumpinputguard.h \
+        streaming/video/overlayeventmonitor_mac.h
+    SOURCES += \
+        gui/macwindowchrome.mm \
+        streaming/video/macqteventpumpinputguard.mm \
+        streaming/video/overlayeventmonitor_mac.mm
+}
+
+linux:!config_SL {
+    DEFINES += HAVE_LINUX_DISPLAY_EVENT_MONITOR
+    HEADERS += streaming/video/overlayeventmonitor_linux.h
+    SOURCES += streaming/video/overlayeventmonitor_linux.cpp
 }
 
 # Platform-specific renderers and decoders
