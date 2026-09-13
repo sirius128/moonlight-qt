@@ -26,7 +26,6 @@ public:
     friend OSStatus renderCallbackSpatial(void *, AudioUnitRenderActionFlags *, const AudioTimeStamp *, uint32_t, uint32_t, AudioBufferList *);
     friend OSStatus onDeviceOverload(AudioObjectID, UInt32, const AudioObjectPropertyAddress *, void *);
     friend OSStatus onAudioNeedsReinit(AudioObjectID, UInt32, const AudioObjectPropertyAddress *, void *);
-    friend OSStatus onAudioNeedsReinit(Uint32, AudioObjectID, UInt32, const AudioObjectPropertyAddress *, void *);
 
 private:
     bool initAudioUnit();
@@ -64,14 +63,10 @@ private:
     // internal device state
     bool m_needsReinit;
     bool m_Spatial;
-    uint32_t m_SpatialOutputType;
-    uint64_t m_LastDebugOutputTime;
 
     // stats
     double m_LastSampleTime;
     uint32_t m_LastNumFrames;
-    uint32_t m_BufferSize;
-    uint32_t m_BufferFilledBytes;
     void statsIncDeviceOverload();
     void statsTrackRender(uint64_t, const AudioTimeStamp *, uint32_t);
 };

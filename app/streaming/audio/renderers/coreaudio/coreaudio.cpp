@@ -14,7 +14,7 @@
 #define kRingBufferMaxSeconds 0.030
 
 CoreAudioRenderer::CoreAudioRenderer()
-    : m_SpatialBuffer(2, 4096)
+    : m_SpatialBuffer(kSpatialOutputChannels, kSpatialMaxFramesPerSlice)
 {
     DEBUG_TRACE("CoreAudioRenderer construct");
 
@@ -196,15 +196,18 @@ OSStatus renderCallbackDirect(void *inRefCon,
     uint32_t availableBytes;
     float *buffer = (float *)TPCircularBufferTail(&me->m_RingBuffer, &availableBytes);
 
+    // NB: vDSP_vclr()/vDSP_mmov() count elements, not bytes
+    int floatsToCopy = bytesToCopy / sizeof(float);
+
     if ((int)availableBytes < bytesToCopy) {
         // write silence if not enough buffered data is available
         // faster version of memset(targetBuffer, 0, bytesToCopy);
-        vDSP_vclr(targetBuffer, 1, bytesToCopy);
+        vDSP_vclr(targetBuffer, 1, floatsToCopy);
         *ioActionFlags |= kAudioUnitRenderAction_OutputIsSilence;
     } else {
-        // faster version of memcpy(targetBuffer, buffer, qMin(bytesToCopy, (int)availableBytes));
-        vDSP_mmov(buffer, targetBuffer, 1, qMin(bytesToCopy, (int)availableBytes), 1, 1);
-        TPCircularBufferConsume(&me->m_RingBuffer, qMin(bytesToCopy, (int)availableBytes));
+        // faster version of memcpy(targetBuffer, buffer, bytesToCopy);
+        vDSP_mmov(buffer, targetBuffer, 1, floatsToCopy, 1, 1);
+        TPCircularBufferConsume(&me->m_RingBuffer, bytesToCopy);
     }
 
     me->statsTrackRender(start, inTimestamp, inNumberFrames);
@@ -311,8 +314,6 @@ bool CoreAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION*
         streamDesc.mChannelsPerFrame = 2;
         streamDesc.mBytesPerPacket   = 4;
         streamDesc.mBytesPerFrame    = 4;
-
-        m_SpatialOutputType = outputType;
 
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                     "CoreAudioRenderer is using spatial audio output (%d-channel stream, output type %d, device has %u channels)",
@@ -443,18 +444,6 @@ bool CoreAudioRenderer::initAudioUnit()
     // We also query the hardware latency (e.g. Bluetooth delay for AirPods), but this is just for fun
 
     {
-        uint32_t bufferFrameSize = 0;
-        uint32_t size = sizeof(uint32_t);
-        AudioObjectPropertyAddress addr{kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMain};
-        status = AudioObjectGetPropertyData(m_OutputDeviceID, &addr, 0, nil, &size, &bufferFrameSize);
-        if (status != noErr) {
-            CA_LogError(status, "Failed to get the output device buffer frame size");
-            return false;
-        }
-        DEBUG_TRACE("CoreAudioRenderer output current BufferFrameSize %d", bufferFrameSize);
-    }
-
-    {
         AudioValueRange avr;
         uint32_t size = sizeof(AudioValueRange);
         AudioObjectPropertyAddress addr{kAudioDevicePropertyBufferFrameSizeRange, kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMain};
@@ -559,8 +548,7 @@ bool CoreAudioRenderer::initRingBuffer()
     m_SpatialAU.setRingBufferPtr(&m_RingBuffer);
 
     // real length will be larger than requested due to memory page alignment
-    m_BufferSize = m_RingBuffer.length;
-    DEBUG_TRACE("CoreAudioRenderer ring buffer init, %d packets (%d bytes)", packetsToBuffer, m_BufferSize);
+    DEBUG_TRACE("CoreAudioRenderer ring buffer init, %d packets (%d bytes)", packetsToBuffer, m_RingBuffer.length);
 
     return true;
 }
@@ -665,8 +653,6 @@ void* CoreAudioRenderer::getAudioBuffer(int* size)
     int bytesPerFrame = m_opusConfig->channelCount * sizeof(float);
     *size = qMin(*size, (int)(bytesFree / bytesPerFrame) * bytesPerFrame);
 
-    m_BufferFilledBytes = m_RingBuffer.length - bytesFree;
-
     return ptr;
 }
 
@@ -732,19 +718,15 @@ AUSpatialMixerOutputType CoreAudioRenderer::getSpatialMixerOutputType()
     switch (dataSource) {
         case kIOAudioOutputPortSubTypeInternalSpeaker:
             return kSpatialMixerOutputType_BuiltInSpeakers;
-            break;
 
         case kIOAudioOutputPortSubTypeHeadphones:
             return kSpatialMixerOutputType_Headphones;
-            break;
 
         case kIOAudioOutputPortSubTypeExternalSpeaker:
             return kSpatialMixerOutputType_ExternalSpeakers;
-            break;
 
         default:
             return kSpatialMixerOutputType_Headphones;
-            break;
     }
 #else
     AVAudioSession *audioSession = [AVAudioSession sharedInstance];

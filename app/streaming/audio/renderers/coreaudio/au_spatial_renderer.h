@@ -7,7 +7,10 @@
 
 #include <Limelight.h>
 
-typedef void (^SimpleBlock)();
+// Frames the spatial mixer may be asked for in one callback. The output buffer
+// the mixer renders into (CoreAudioRenderer::m_SpatialBuffer) is sized to match.
+constexpr uint32_t kSpatialMaxFramesPerSlice = 4096;
+constexpr uint32_t kSpatialOutputChannels = 2;
 
 class AUSpatialRenderer
 {
@@ -17,7 +20,6 @@ public:
 
     double getAudioUnitLatency();
     void setRingBufferPtr(const TPCircularBuffer* __nonnull buffer);
-    void setStatsTrackRenderBlock(SimpleBlock _Nonnull);
     bool setup(AUSpatialMixerOutputType outputType, float sampleRate, int inChannelCount);
     OSStatus setStreamFormatAndACL(float inSampleRate, AudioChannelLayoutTag inLayoutTag, AudioUnitScope inScope, AudioUnitElement inElement);
     OSStatus setOutputType(AUSpatialMixerOutputType outputType);
@@ -37,7 +39,6 @@ private:
 
     AudioUnit _Nonnull m_Mixer;
     const TPCircularBuffer* _Nonnull m_RingBufferPtr; // pointer to RingBuffer in the outer CoreAudioRenderer
-    SimpleBlock _Nonnull m_StatsTrackRenderBlock;
 
     double m_AudioUnitLatency;
 

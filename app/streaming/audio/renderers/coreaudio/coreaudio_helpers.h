@@ -75,32 +75,3 @@ CA_DEBUG_HELPER static void CA_PrintASBD(const char *description, const AudioStr
         (flags & kAudioFormatFlagIsNonInterleaved) ? " non-interleaved" : " interleaved");
 }
 
-// classic hex dump
-CA_DEBUG_HELPER static void CA_HexDump(const float *buffer, size_t length)
-{
-    const uint8_t *bytePtr = (const uint8_t *)buffer;
-    size_t bytesToPrint = length * sizeof(float);
-
-    // Print 32 bytes per line
-    for (size_t i = 0; i < bytesToPrint; i += 32) {
-        printf("%08lx  ", (unsigned long)(bytePtr + i));
-
-        // Print the hex values (32 bytes)
-        for (size_t j = 0; j < 32 && (i + j) < bytesToPrint; ++j) {
-            printf("%02x ", bytePtr[i + j]);
-            if (j == 15) printf(" ");
-        }
-
-        printf(" |");
-
-        for (size_t j = 0; j < 32 && (i + j) < bytesToPrint; ++j) {
-            uint8_t byte = bytePtr[i + j];
-            if (byte >= 32 && byte <= 126)
-                printf("%c", byte);
-            else
-                printf(".");
-        }
-
-        printf("|\n");
-    }
-}

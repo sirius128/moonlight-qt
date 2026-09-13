@@ -359,3 +359,71 @@ scripts/generate-dmg.sh Release
   結果をキャッシュする余地がある
 - 12ch ストリームを 8ch の HDMI レシーバーへ流す場合、パススルーに失敗して SDL レンダラーへ
   フォールバックする。空間ミキサーに回すとステレオになるため、どちらが望ましいかは要検討
+
+## 13. VoidLink (moonlight-ios フォーク) との比較
+
+同じ Apple プラットフォーム向けでも、iOS 側フォークの
+[VoidLink](https://github.com/The-Fried-Fish/VoidLink-previously-moonlight-zwm) とは
+**空間化を誰がやるか**が根本的に違う。AirPods 接続時に iOS では「マルチチャンネル」表記が出るのに
+macOS では何も出ない、という現象はここに起因する。
+
+### 13.1 実装の対比
+
+| | 本ブランチ (moonlight-qt / macOS) | VoidLink (iOS) |
+|---|---|---|
+| 出力 API | AUHAL (`kAudioUnitSubType_HALOutput`) 直叩き + pull 型リングバッファ | `SDL_QueueAudio` (サラウンド時) / `AVAudioEngine` + `AVAudioPlayerNode` (ステレオ時のみ) |
+| 空間化 | **アプリ内で `AUSpatialMixer`**。出力は 2ch 非インターリーブ (`coreaudio.cpp:311`, `au_spatial_renderer.mm:176`) | **やらない**。6/8ch をそのまま OS に渡し iOS 18 のシステム空間化に任せる |
+| ch 数の決定 | ストリームの ch 数をそのまま受け、出力タイプとデバイス ch 数で spatial/passthrough を判定 (`coreaudio.cpp:271-289`) | `AVAudioSession.maximumOutputNumberOfChannels` で probe。iOS 18+ なら **8ch あると偽装**して要求 (`MainFrameViewController.m:894-899`) |
+| 最大 ch | 12ch (7.1.4、Atmos レイアウトへリマップ) | 8ch |
+| ヘッドトラッキング / パーソナライズ HRTF | 設定と entitlement 付きで自前制御 (§4.4, §9) | なし (OS 任せ) |
+| デバイス変更追従 | HAL プロパティリスナ → `m_needsReinit` | `AVAudioSession` の route change / interruption 通知 → `resetSysAudioPlayback` |
+| レイテンシ / 統計 | `AUDIO_STATS`、`OverlayDebugAudio`、バッファ・HW レイテンシ計測 | オーディオ統計なし |
+| 音量 | なし (OS 任せ) | ソフトウェア音量 (指数カーブ 2.5) |
+
+VoidLink 側の実装で注意すべき点が2つある。
+
+- `Connection.useSystemAudioEngine = streamSettings.audioConfig.intValue == 2`
+  (`MainFrameViewController.m:914`) なので、**`AVAudioEngine` 経路はステレオ設定のときだけ**通る。
+  5.1/7.1 は SDL 経路。したがって `AudioEngineInit()` (`Connection.m:369-`) の
+  `case 6:` / `case 8:` は実質デッドコード。
+- その 8ch 分岐は `kAudioChannelLayoutTag_MPEG_7_1_A` (= L R C LFE Ls Rs **Lc Rc**) を使っている。
+  Sunshine/GFE の WAVE 順 (FL FR FC LFE BL BR SL SR) とは一致しないので、生きていればサイドが
+  前方センター寄りに化ける。本ブランチが `WAVE_7_1` を選んでいる方が正しい (§5.1)。
+
+### 13.2 iOS で「マルチチャンネル」表記が出る理由
+
+iOS には `AVAudioSession` があり、ルートが空間再生可能なとき OS が仮想的なマルチチャンネル出力を
+提供する。VoidLink はそこに 6/8ch を投げているだけで、HRTF はシステムが行う。
+Control Center の表記はこの入力フォーマットで切り替わり、**マルチチャンネルなら「空間オーディオ」、
+2ch なら「ステレオを空間化」**になる。VoidLink のログ文言
+`"System-provided spatial audio available, pretending device has 8 channels"` が示す通り、
+iOS 18 では 8ch を要求しているので「マルチチャンネル」と表示される。
+
+### 13.3 macOS で何も出ない理由
+
+実装ミスではなくプラットフォームの構造差である。
+
+- **macOS に `AVAudioSession` が存在しない。** SDK ヘッダ上、`setSupportsMultichannelContent:`、
+  `AVAudioSessionPortDescription.isSpatialAudioEnabled`、
+  `AVAudioSessionSpatialPlaybackCapabilitiesChangedNotification` はいずれも
+  `API_UNAVAILABLE(macos)`。「このアプリはマルチチャンネルコンテンツを出す」と OS に申告する
+  API 自体がない。
+- **macOS の AirPods は HAL 上では 2ch デバイス**でしかなく、AUHAL クライアント (本ブランチ、SDL、
+  macOS の `AVAudioEngine` すべて) は 2ch しか流せない。macOS のシステム空間化は AVFoundation の
+  メディア再生パス (AVPlayer、ミュージック/TV アプリ等) の内側で行われ、HAL に直接話すアプリは
+  そのレイヤをバイパスする。VLC が空間オーディオにならないのと同じ理由。
+- 加えて本ブランチは `AUSpatialMixer` で自前でバイノーラル化した 2ch を出しているため、
+  **OS から見れば「ただのステレオを流しているアプリ」**である。よってメニューバーの AirPods 項目に
+  「マルチチャンネル」は出ようがなく、出るとしても「ステレオを空間化」だけ。
+
+visionOS 向けには `CASpatialAudioExperience` / `kAudioQueueProperty_IntendedSpatialExperience` で
+意図を宣言できるが、これらも `API_UNAVAILABLE(macos)`。つまり macOS で「マルチチャンネル」表記を
+出す手段は現状ない。上流 PR #1399 が `AUSpatialMixer` を使っているのは、macOS ではそれが唯一の
+経路だからである。
+
+### 13.4 したがって
+
+- OS 側の表示は動作確認の材料にならない。§11 のログ行と統計オーバーレイの
+  `Render mode:` 行で判断する。`passthrough` なら空間化されていない。
+- macOS の「ステレオを空間化」を ON にしていると、自前 HRTF の上にさらに OS の空間化が乗って
+  二重処理になる。本ブランチ使用時は OFF が望ましい。

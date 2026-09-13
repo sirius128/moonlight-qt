@@ -1,6 +1,5 @@
 #import "au_spatial_renderer.h"
 #import "coreaudio_helpers.h"
-#import "AllocatedAudioBufferList.h"
 #include "settings/streamingpreferences.h"
 
 #import <Accelerate/Accelerate.h>
@@ -15,6 +14,8 @@ AUSpatialRenderer::AUSpatialRenderer()
 {
     DEBUG_TRACE("AUSpatialRenderer construct");
 
+    // Identity until setup() learns the real channel count, so the map is never
+    // read uninitialized.
     buildChannelMap(AUDIO_CONFIGURATION_MAX_CHANNEL_COUNT);
 
     AudioComponentDescription desc = {kAudioUnitType_Mixer,
@@ -317,8 +318,8 @@ bool AUSpatialRenderer::setup(AUSpatialMixerOutputType outputType, float sampleR
     }
 
 
-    // Set the maximum frames we can process per callback (must match size of m_SpatialBuffer)
-    uint32_t mfps = 4096;
+    // Set the maximum frames we can process per callback
+    uint32_t mfps = kSpatialMaxFramesPerSlice;
     status = AudioUnitSetProperty(m_Mixer, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &mfps, sizeof(mfps));
     if (status != noErr) {
         CA_LogError(status, "Failed to set AUSpatialRenderer max frame size");
