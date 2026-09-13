@@ -762,14 +762,11 @@ void Session::clDs5HapticsPcm(const LI_DS5_HAPTICS_PCM_FRAME* frame)
 
 // The IR feed is an analysis stream that arrives far faster than a rumble motor
 // can physically respond - measured at ~200 frames/s against a Sunshine
-// Foundation host. Every frame forwarded from it becomes one HID output report,
-// and SDL serialises DS5 output reports through a single thread that the LED and
-// adaptive trigger reports share, so forwarding all of them starves both: the
-// pad kept replaying a backlog of stale LED and trigger updates for tens of
-// seconds after the game had already exited. Coalescing to 16 ms is still faster
-// than the motors can follow and leaves the shared queue with room to spare.
-// Set to 0 to forward every frame.
-#define DS5_IR_RUMBLE_MIN_INTERVAL_MS 16
+// Foundation host. Every frame becomes one HID output report, and SDL serialises
+// DS5 output reports through a single thread shared with the LED and adaptive
+// trigger reports, so forwarding all of them starves both. Coalescing to 16 ms is
+// still faster than the motors can follow.
+static constexpr uint32_t k_Ds5IrRumbleMinIntervalMs = 16;
 
 void Session::clDs5HapticsIrV2(const LI_DS5_HAPTICS_IR_FRAME_V2* frame)
 {
@@ -777,23 +774,23 @@ void Session::clDs5HapticsIrV2(const LI_DS5_HAPTICS_IR_FRAME_V2* frame)
         return;
     }
 
-    // IR lanes preserve authored left/right intent, while SDL exposes the
-    // common low/high-frequency motor model. Fold both lanes into spectral
-    // energy here; device-specific renderers can replace this calibration.
-    const auto output = dualsense_haptics::renderIrV2(*frame);
-
     // The end of a stream carries the stop, so it is never held back - dropping
     // it would leave the motors running.
     const bool streamEnd = (frame->flags & LI_DS5_HAPTICS_IR_FLAG_STREAM_END) != 0;
     static std::atomic<uint32_t> lastForwardTicks{0};
     const uint32_t now = SDL_GetTicks();
-    if (!streamEnd && DS5_IR_RUMBLE_MIN_INTERVAL_MS > 0) {
+    if (!streamEnd) {
         const uint32_t last = lastForwardTicks.load(std::memory_order_relaxed);
-        if (last != 0 && now - last < DS5_IR_RUMBLE_MIN_INTERVAL_MS) {
+        if (last != 0 && now - last < k_Ds5IrRumbleMinIntervalMs) {
             return;
         }
     }
     lastForwardTicks.store(now, std::memory_order_relaxed);
+
+    // IR lanes preserve authored left/right intent, while SDL exposes the
+    // common low/high-frequency motor model. Fold both lanes into spectral
+    // energy here; device-specific renderers can replace this calibration.
+    const auto output = dualsense_haptics::renderIrV2(*frame);
 
     clRumble(frame->controllerNumber, output.lowFrequency, output.highFrequency);
 }

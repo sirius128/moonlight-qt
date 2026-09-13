@@ -24,7 +24,6 @@
 #define NOMINMAX
 #include <windows.h>
 #include <audioclient.h>
-#include <cwctype>
 #include <propkey.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <ksmedia.h>
@@ -62,6 +61,31 @@ struct Packet
     std::uint32_t sequenceNumber = 0;
     std::vector<std::uint8_t> pcm;
 };
+
+// A DualShock 4 also calls itself "Wireless Controller", but it exposes a
+// two-channel endpoint, so the channel count check at each call site rules it
+// out.
+bool isDualSenseName(const std::string& name)
+{
+    std::string lower = name;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return lower.find("dualsense") != std::string::npos ||
+           lower.find("wireless controller") != std::string::npos ||
+           lower.find("hidmaestro") != std::string::npos;
+}
+
+// Spread the stereo haptics PCM across the endpoint's four channels: silence on
+// the headset pair, the authored samples on the voice-coil pair.
+void interleaveHapticsFloat(const Packet& packet, float* out)
+{
+    const auto* input = reinterpret_cast<const std::int16_t*>(packet.pcm.data());
+    std::fill_n(out, static_cast<std::size_t>(packet.frameCount) * EndpointChannelCount, 0.0f);
+    for (std::uint16_t i = 0; i < packet.frameCount; i++) {
+        out[i * EndpointChannelCount + HapticsChannelOffset] = input[i * 2] / 32768.0f;
+        out[i * EndpointChannelCount + HapticsChannelOffset + 1] = input[i * 2 + 1] / 32768.0f;
+    }
+}
 
 // Platform sink for haptics PCM. The queueing, stream tracking and prebuffer
 // state machine around it are shared; only endpoint discovery and the actual
@@ -107,11 +131,7 @@ public:
 
     static bool isDualSenseName(const std::wstring& name)
     {
-        auto lower = name;
-        std::transform(lower.begin(), lower.end(), lower.begin(), towlower);
-        return lower.find(L"dualsense") != std::wstring::npos ||
-               lower.find(L"wireless controller") != std::wstring::npos ||
-               lower.find(L"hidmaestro") != std::wstring::npos;
+        return ::isDualSenseName(QString::fromStdWString(name).toStdString());
     }
 
     static bool classifyFormat(const WAVEFORMATEX* format, bool& isFloat, WORD& bits)
@@ -281,12 +301,7 @@ public:
         if (FAILED(m_RenderClient->GetBuffer(packet.frameCount, &output))) return false;
         const auto* input = reinterpret_cast<const std::int16_t*>(packet.pcm.data());
         if (m_FloatSamples) {
-            auto* samples = reinterpret_cast<float*>(output);
-            std::fill_n(samples, static_cast<std::size_t>(packet.frameCount) * EndpointChannelCount, 0.0f);
-            for (std::uint16_t i = 0; i < packet.frameCount; i++) {
-                samples[i * EndpointChannelCount + HapticsChannelOffset] = input[i * 2] / 32768.0f;
-                samples[i * EndpointChannelCount + HapticsChannelOffset + 1] = input[i * 2 + 1] / 32768.0f;
-            }
+            interleaveHapticsFloat(packet, reinterpret_cast<float*>(output));
         }
         else if (m_BitsPerSample == 16) {
             auto* samples = reinterpret_cast<std::int16_t*>(output);
@@ -379,31 +394,21 @@ constexpr std::uint32_t RingFrames = 4800;
 constexpr AudioUnitElement OutputElement = 0;
 constexpr AudioUnitElement InputElement = 1;
 
-std::string lowercased(const std::string& value)
+// Fixed-size scalar property read. The variable-size cases (device list, stream
+// configuration) keep their own bodies below.
+template<typename T>
+bool getDeviceProperty(AudioObjectID object, AudioObjectPropertySelector selector,
+                       AudioObjectPropertyScope scope, T& out)
 {
-    std::string lower = value;
-    std::transform(lower.begin(), lower.end(), lower.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return lower;
-}
-
-bool isDualSenseName(const std::string& name)
-{
-    const auto lower = lowercased(name);
-    // A DualShock 4 also calls itself "Wireless Controller", but it exposes a
-    // two-channel endpoint, so the channel count check below rules it out.
-    return lower.find("dualsense") != std::string::npos ||
-           lower.find("wireless controller") != std::string::npos;
+    AudioObjectPropertyAddress addr{selector, scope, kAudioObjectPropertyElementMain};
+    UInt32 size = sizeof(out);
+    return AudioObjectGetPropertyData(object, &addr, 0, nullptr, &size, &out) == noErr;
 }
 
 bool copyDeviceName(AudioDeviceID device, std::string& out)
 {
-    AudioObjectPropertyAddress addr{kAudioObjectPropertyName,
-                                    kAudioObjectPropertyScopeGlobal,
-                                    kAudioObjectPropertyElementMain};
     CFStringRef value = nullptr;
-    UInt32 size = sizeof(value);
-    if (AudioObjectGetPropertyData(device, &addr, 0, nullptr, &size, &value) != noErr ||
+    if (!getDeviceProperty(device, kAudioObjectPropertyName, kAudioObjectPropertyScopeGlobal, value) ||
         value == nullptr) {
         return false;
     }
@@ -446,30 +451,20 @@ std::uint32_t outputChannelCount(AudioDeviceID device)
 
 bool isUsbDevice(AudioDeviceID device)
 {
-    AudioObjectPropertyAddress addr{kAudioDevicePropertyTransportType,
-                                    kAudioObjectPropertyScopeGlobal,
-                                    kAudioObjectPropertyElementMain};
     UInt32 transport = 0;
-    UInt32 size = sizeof(transport);
-    if (AudioObjectGetPropertyData(device, &addr, 0, nullptr, &size, &transport) != noErr) {
-        return false;
-    }
-    return transport == kAudioDeviceTransportTypeUSB;
+    return getDeviceProperty(device, kAudioDevicePropertyTransportType,
+                             kAudioObjectPropertyScopeGlobal, transport) &&
+           transport == kAudioDeviceTransportTypeUSB;
 }
 
 bool hasHapticsSampleRate(AudioDeviceID device)
 {
-    AudioObjectPropertyAddress addr{kAudioDevicePropertyNominalSampleRate,
-                                    kAudioObjectPropertyScopeGlobal,
-                                    kAudioObjectPropertyElementMain};
-    Float64 rate = 0.0;
-    UInt32 size = sizeof(rate);
-    if (AudioObjectGetPropertyData(device, &addr, 0, nullptr, &size, &rate) != noErr) {
-        return false;
-    }
     // The controller only ever runs at 48 kHz. Refuse anything else rather than
     // let the HAL resample authored haptics behind our back.
-    return rate == 48000.0;
+    Float64 rate = 0.0;
+    return getDeviceProperty(device, kAudioDevicePropertyNominalSampleRate,
+                             kAudioObjectPropertyScopeGlobal, rate) &&
+           rate == 48000.0;
 }
 
 bool findEndpointDevice(AudioDeviceID* outDevice, std::string* outName)
@@ -490,11 +485,14 @@ bool findEndpointDevice(AudioDeviceID* outDevice, std::string* outName)
     }
 
     for (AudioDeviceID device : devices) {
+        // Cheapest discriminators first: the name fetch allocates and converts a
+        // CFString, so only reach it for a device that already looks right.
+        if (!isUsbDevice(device)) continue;
+        if (outputChannelCount(device) != EndpointChannelCount) continue;
+        if (!hasHapticsSampleRate(device)) continue;
+
         std::string name;
         if (!copyDeviceName(device, name) || !isDualSenseName(name)) continue;
-        if (outputChannelCount(device) != EndpointChannelCount) continue;
-        if (!isUsbDevice(device)) continue;
-        if (!hasHapticsSampleRate(device)) continue;
 
         if (outDevice != nullptr) *outDevice = device;
         if (outName != nullptr) *outName = name;
@@ -648,12 +646,8 @@ public:
     {
         if (m_Unit == nullptr || !m_RingValid || packet.frameCount == 0) return true;
 
-        m_Scratch.assign(static_cast<std::size_t>(packet.frameCount) * EndpointChannelCount, 0.0f);
-        const auto* input = reinterpret_cast<const std::int16_t*>(packet.pcm.data());
-        for (std::uint16_t i = 0; i < packet.frameCount; i++) {
-            m_Scratch[i * EndpointChannelCount + HapticsChannelOffset] = input[i * 2] / 32768.0f;
-            m_Scratch[i * EndpointChannelCount + HapticsChannelOffset + 1] = input[i * 2 + 1] / 32768.0f;
-        }
+        m_Scratch.resize(static_cast<std::size_t>(packet.frameCount) * EndpointChannelCount);
+        interleaveHapticsFloat(packet, m_Scratch.data());
 
         // The ring holds an order of magnitude more than one packet, so if it
         // stays full the device has stopped draining. Give up after a bounded
