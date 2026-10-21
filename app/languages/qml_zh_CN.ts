@@ -1401,6 +1401,10 @@
         <translation>7.1.4 环绕声</translation>
     </message>
     <message>
+        <source>7.1.4 only adds height channels if the host can output 12-channel audio. Windows hosts usually upmix 7.1 instead.</source>
+        <translation>仅当主机能输出 12 声道音频时，7.1.4 才会增加顶部声道。Windows 主机通常只是将 7.1 上混为 7.1.4。</translation>
+    </message>
+    <message>
         <source>Mute host PC speakers while streaming</source>
         <translation>流式传输启动时将主机的扬声器静音</translation>
     </message>

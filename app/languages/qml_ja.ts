@@ -877,6 +877,10 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>7.1.4 only adds height channels if the host can output 12-channel audio. Windows hosts usually upmix 7.1 instead.</source>
+        <translation>7.1.4 で高さチャンネルが加わるのは、ホストが 12ch の音声を出力できる場合のみです。Windows ホストでは通常、7.1 をアップミックスしたものになります。</translation>
+    </message>
+    <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="98"/>
         <source>Mute host PC speakers while streaming</source>
         <translation>ストリーミング中にホストPCのスピーカーをミュートする</translation>

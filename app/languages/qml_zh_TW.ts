@@ -969,6 +969,10 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>7.1.4 only adds height channels if the host can output 12-channel audio. Windows hosts usually upmix 7.1 instead.</source>
+        <translation>僅當主機能輸出 12 聲道音訊時，7.1.4 才會增加頂部聲道。Windows 主機通常只是將 7.1 上混為 7.1.4。</translation>
+    </message>
+    <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="98"/>
         <source>Mute host PC speakers while streaming</source>
         <translation>串流時將主機電腦的喇叭靜音</translation>

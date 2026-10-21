@@ -44,6 +44,10 @@ Column {
 
         ChoiceRow {
             title: qsTr("Audio configuration")
+            description: StreamingPreferences.audioConfig === StreamingPreferences.AC_714_SURROUND ?
+                             qsTr("7.1.4 only adds height channels if the host can output 12-channel audio. Windows hosts usually upmix 7.1 instead.")
+                           :
+                             ""
             selectedValue: StreamingPreferences.audioConfig
             onValueActivated: function(value) { StreamingPreferences.audioConfig = value }
 
