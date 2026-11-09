@@ -3,6 +3,7 @@
 
 #include "d3d11va.h"
 #include "dxutil.h"
+#include "videotexturesampling.h"
 #include "path.h"
 #include "utils.h"
 
@@ -10,12 +11,8 @@
 #include "streaming/session.h"
 #include "streaming/video/videoenhancement.h"
 
-#include "public/common/AMFFactory.h"
-#include "public/include/core/Platform.h"
-// Video upscaling & Sharpening
-#include "public/include/components/HQScaler.h"
-
 #include <SDL_syswm.h>
+#include <QScopeGuard>
 
 #include <dwmapi.h>
 
@@ -62,23 +59,11 @@ static const std::array<const char*, D3D11VARenderer::PixelShaders::_COUNT> k_Vi
 };
 
 D3D11VARenderer::D3D11VARenderer(int decoderSelectionPass)
-    : IFFmpegRenderer(RendererType::D3D11VA),
-      m_DecoderSelectionPass(decoderSelectionPass),
-      m_DevicesWithFL11Support(0),
-      m_DevicesWithCodecSupport(0),
-      m_LastColorTrc(AVCOL_TRC_UNSPECIFIED),
-      m_AllowTearing(false),
-      m_OverlayLock(0),
-      m_HwDeviceContext(nullptr),
-      m_AmfContext(nullptr),
-      m_AmfSurface(nullptr),
-      m_AmfData(nullptr),
-      m_AmfUpScaler(nullptr),
-      m_AmfInitialized(false),
-      m_LastColorSpace(-1),
-      m_LastFullRange(false),
-      m_LastEnhColorTrc(-1),
-      m_OutputIndex(0)
+    : IFFmpegRenderer(RendererType::D3D11VA), m_DecoderSelectionPass(decoderSelectionPass),
+      m_DevicesWithFL11Support(0), m_DevicesWithCodecSupport(0),
+      m_LastColorTrc(AVCOL_TRC_UNSPECIFIED), m_AllowTearing(false), m_OverlayLock(0),
+      m_HwDeviceContext(nullptr), m_LastColorSpace(-1), m_LastFullRange(false),
+      m_LastEnhColorTrc(-1), m_OutputIndex(0)
 {
     m_ContextLock = SDL_CreateMutex();
 
@@ -134,16 +119,8 @@ D3D11VARenderer::~D3D11VARenderer()
     m_RenderTargetView.Reset();
     m_SwapChain.Reset();
 
-    // cleanup AMF instances
-    if(m_AmfUpScaler){
-        m_AmfUpScaler->Terminate();
-        m_AmfUpScaler = nullptr;
-    }
-    if(m_AmfContext){
-        m_AmfContext->Terminate();
-        m_AmfContext = nullptr;
-    }
-    g_AMFFactory.Terminate();
+    // Release AMF interfaces before unloading its runtime and D3D devices.
+    m_Amf.reset();
 
     if(m_VideoProcessorEnumerator){
         m_VideoProcessorEnumerator.Reset();
@@ -884,6 +861,10 @@ bool D3D11VARenderer::prepareDecoderContextInGetFormat(AVCodecContext *context, 
 
 void D3D11VARenderer::renderFrame(AVFrame* frame)
 {
+    if (m_RenderResetPending) {
+        return;
+    }
+
     // Acquire the context lock for rendering to prevent concurrent
     // access from inside FFmpeg's decoding code
     if (m_DecodeDevice == m_RenderDevice) {
@@ -899,8 +880,17 @@ void D3D11VARenderer::renderFrame(AVFrame* frame)
     m_RenderDeviceContext->OMSetRenderTargets(1, m_RenderTargetView.GetAddressOf(), nullptr);
 
     // Prepare the Enhanced Output
-    if (m_VideoEnhancement->isVideoEnhancementEnabled()) {
-        prepareEnhancedOutput(frame);
+    if (m_VideoEnhancement->isVideoEnhancementEnabled() && !prepareEnhancedOutput(frame)) {
+        // A partial fallback must never reach renderVideo(). The event loop will
+        // destroy this renderer and recreate all decoder/render resources.
+        m_RenderResetPending = true;
+        if (m_DecodeDevice == m_RenderDevice) {
+            unlockContext(this);
+        }
+        SDL_Event event = {};
+        event.type = SDL_RENDER_DEVICE_RESET;
+        SDL_PushEvent(&event);
+        return;
     }
 
     // Render our video frame with the aspect-ratio adjusted viewport
@@ -1032,18 +1022,12 @@ void D3D11VARenderer::bindVideoVertexBuffer(bool frameChanged, AVFrame* frame)
         SDL_FRect renderRect;
         StreamUtils::screenSpaceToNormalizedDeviceCoords(&dst, &renderRect, m_DisplayWidth, m_DisplayHeight);
 
-        float uMax, vMax;
-        if (m_VideoProcessorOutputRGBA) {
-            // VP RGBA output: VP already scaled to m_OutputTexture dimensions,
-            // texture has no alignment padding. Sample the full texture.
-            uMax = 1.0f;
-            vMax = 1.0f;
-        } else {
-            // Don't sample from the alignment padding area
-            auto framesContext = (AVHWFramesContext*)frame->hw_frames_ctx->data;
-            uMax = (float)frame->width / framesContext->width;
-            vMax = (float)frame->height / framesContext->height;
-        }
+        auto framesContext = (AVHWFramesContext*)frame->hw_frames_ctx->data;
+        const auto sampling = VideoTextureSampling::calculate(
+            frame->width, frame->height, framesContext->width, framesContext->height,
+            m_VideoProcessorOutputRGBA || m_Amf.isInitialized());
+        const float uMax = sampling.uMax;
+        const float vMax = sampling.vMax;
 
         VERTEX verts[] =
         {
@@ -1139,17 +1123,25 @@ void D3D11VARenderer::bindColorConversion(bool frameChanged, AVFrame* frame)
 
     std::array<float, 2> chromaOffset;
     getFrameChromaCositingOffsets(frame, chromaOffset);
-    constBuf.chromaOffset[0] = chromaOffset[0] / framesContext->width;
-    constBuf.chromaOffset[1] = chromaOffset[1] / framesContext->height;
+    int textureWidth = framesContext->width;
+    int textureHeight = framesContext->height;
+    if (m_Amf.isInitialized()) {
+        D3D11_TEXTURE2D_DESC desc;
+        m_VideoTexture->GetDesc(&desc);
+        textureWidth = static_cast<int>(desc.Width);
+        textureHeight = static_cast<int>(desc.Height);
+    }
+    constBuf.chromaOffset[0] = chromaOffset[0] / textureWidth;
+    constBuf.chromaOffset[1] = chromaOffset[1] / textureHeight;
 
     // Set HLG mode flag for shader HLG→PQ EOTF conversion
     constBuf.hlgMode = (frame->color_trc == AVCOL_TRC_ARIB_STD_B67) ? 1.0f : 0.0f;
 
     // Limit chroma texcoords to avoid sampling from alignment texels
-    constBuf.chromaUVMax[0] = frame->width != framesContext->width ?
-                                  ((float)(frame->width - 1) / framesContext->width) : 1.0f;
-    constBuf.chromaUVMax[1] = frame->height != (int)framesContext->height ?
-                                  ((float)(frame->height - 1) / framesContext->height) : 1.0f;
+    const auto sampling = VideoTextureSampling::calculate(frame->width, frame->height, textureWidth,
+                                                          textureHeight, m_Amf.isInitialized());
+    constBuf.chromaUVMax[0] = sampling.chromaUMax;
+    constBuf.chromaUVMax[1] = sampling.chromaVMax;
 
     D3D11_SUBRESOURCE_DATA constData = {};
     constData.pSysMem = &constBuf;
@@ -1181,6 +1173,28 @@ void D3D11VARenderer::renderVideo(AVFrame* frame)
         unlockContext(this);
     }
 
+    // Complete render-to-decode synchronization even when AMF rejects a frame.
+    // Skipping the draw must not let the decoder reuse a texture still being copied.
+    const auto renderFence = qScopeGuard([this] {
+        // Make the decoder wait until this render context finishes reading its textures.
+        if (m_DecodeDevice != m_RenderDevice) {
+            SDL_assert(m_DecodeR2DFence);
+            SDL_assert(m_RenderR2DFence);
+
+            // Because Pacer keeps a reference to the current frame until the next frame is
+            // rendered, we insert a wait for the previous frame's fence value rather than the
+            // current one. This means the fence should generally not cause a pipeline bubble for
+            // the decoder unless rendering is taking much longer than expected.
+            if (SUCCEEDED(m_RenderDeviceContext->Signal(m_RenderR2DFence.Get(), m_R2DFenceValue))) {
+                lockContext(this);
+                SDL_assert(m_R2DFenceValue > 0);
+                m_DecodeDeviceContext->Wait(m_DecodeR2DFence.Get(), m_R2DFenceValue - 1);
+                unlockContext(this);
+                m_R2DFenceValue++;
+            }
+        }
+    });
+
     UINT srvIndex;
     if (m_BindDecoderOutputTextures) {
         // Our indexing logic depends on a direct mapping into m_VideoTextureResourceViews
@@ -1193,25 +1207,20 @@ void D3D11VARenderer::renderVideo(AVFrame* frame)
                          srvIndex);
             return;
         }
-    }
-    else if (m_AmfInitialized) {
+    } else if (m_Amf.isInitialized()) {
         // AMD (RDNA2+): AMF HQ Scaler path
         m_RenderDeviceContext->CopySubresourceRegion(m_AmfTexture.Get(), 0, 0, 0, 0,
                                                      m_RenderSharedTextureArray.Get(),
                                                      (int)(intptr_t)frame->data[1],
                                                      &m_SrcBox);
-        m_AmfContext->CreateSurfaceFromDX11Native(m_AmfTexture.Get(), &m_AmfSurface, nullptr);
-
-        m_AmfUpScaler->SubmitInput(m_AmfSurface);
-        m_AmfUpScaler->QueryOutput(&m_AmfData);
-        m_AmfUpScaler->Flush();
-
-        m_AmfData->QueryInterface(amf::AMFSurface::IID(), reinterpret_cast<void**>(&m_AmfSurface));
-        m_RenderDeviceContext->CopyResource(m_VideoTexture.Get(), (ID3D11Texture2D*)m_AmfSurface->GetPlaneAt(0)->GetNative());
+        if (!m_Amf.render(m_AmfTexture.Get(), m_VideoTexture.Get(), m_RenderDeviceContext.Get())) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "AMF frame processing failed; skipping video draw");
+            return;
+        }
 
         srvIndex = 0;
-    }
-    else if (m_VideoEnhancement->isVideoEnhancementEnabled() && !m_AmfInitialized) {
+    } else if (m_VideoEnhancement->isVideoEnhancementEnabled() && !m_Amf.isInitialized()) {
         // NVIDIA RTX / Intel Arc: VideoProcessor path
         m_RenderDeviceContext->CopySubresourceRegion(m_EnhancedTexture.Get(), 0, 0, 0, 0,
                                                      m_RenderSharedTextureArray.Get(),
@@ -1220,8 +1229,7 @@ void D3D11VARenderer::renderVideo(AVFrame* frame)
         m_VideoContext->VideoProcessorBlt(m_VideoProcessor.Get(), m_OutputView.Get(), 0, 1, &m_StreamData);
 
         srvIndex = 0;
-    }
-    else {
+    } else {
         // No enhancement processing: plain copy
         m_RenderDeviceContext->CopySubresourceRegion1(m_VideoTexture.Get(), 0, 0, 0, 0,
                                                       m_RenderSharedTextureArray.Get(),
@@ -1257,24 +1265,6 @@ void D3D11VARenderer::renderVideo(AVFrame* frame)
     // Unbind SRVs for this frame
     ID3D11ShaderResourceView* nullSrvs[2] = {};
     m_RenderDeviceContext->PSSetShaderResources(0, 2, nullSrvs);
-
-    // Insert a fence to force the decode context to wait for the render context to finish reading
-    if (m_DecodeDevice != m_RenderDevice) {
-        SDL_assert(m_DecodeR2DFence);
-        SDL_assert(m_RenderR2DFence);
-
-        // Because Pacer keeps a reference to the current frame until the next frame is rendered,
-        // we insert a wait for the previous frame's fence value rather than the current one.
-        // This means the fence should generally not cause a pipeline bubble for the decoder
-        // unless rendering is taking much longer than expected.
-        if (SUCCEEDED(m_RenderDeviceContext->Signal(m_RenderR2DFence.Get(), m_R2DFenceValue))) {
-            lockContext(this);
-            SDL_assert(m_R2DFenceValue > 0);
-            m_DecodeDeviceContext->Wait(m_DecodeR2DFence.Get(), m_R2DFenceValue - 1);
-            unlockContext(this);
-            m_R2DFenceValue++;
-        }
-    }
 }
 
 // This function must NOT use any DXGI or ID3D11DeviceContext methods
@@ -1442,6 +1432,15 @@ bool D3D11VARenderer::notifyWindowChanged(PWINDOW_STATE_CHANGE_INFO stateInfo)
     }
 
     if (stateInfo->stateChangeFlags & WINDOW_STATE_CHANGE_SIZE) {
+        // Enhancement resources (AMF scaler, VP rectangles and output textures)
+        // are sized during initialization. Let Session recreate them together,
+        // rather than resizing only the swapchain and stretching stale output.
+        if (m_VideoEnhancement->isVideoEnhancementEnabled() && stateInfo->width > 0 &&
+            stateInfo->height > 0 &&
+            (stateInfo->width != m_DisplayWidth || stateInfo->height != m_DisplayHeight)) {
+            return false;
+        }
+
         // Resize our swapchain and reconstruct size-dependent resources
 
         DXGI_SWAP_CHAIN_DESC1 swapchainDesc;
@@ -2055,7 +2054,12 @@ bool D3D11VARenderer::setupVideoTexture(AVHWFramesContext* framesContext)
     D3D11_TEXTURE2D_DESC texDesc = {};
 
     // Size of the output texture
-    if (m_VideoEnhancement->isVideoEnhancementEnabled()) {
+    if (m_Amf.isInitialized()) {
+        // The final quad handles letterboxing. AMF produces just the image,
+        // without embedding another set of bars into the sampled texture.
+        texDesc.Width = m_OutputTexture.width;
+        texDesc.Height = m_OutputTexture.height;
+    } else if (m_VideoEnhancement->isVideoEnhancementEnabled()) {
         texDesc.Width = m_DisplayWidth;
         texDesc.Height = m_DisplayHeight;
     } else {
@@ -2068,7 +2072,7 @@ bool D3D11VARenderer::setupVideoTexture(AVHWFramesContext* framesContext)
     // When the video processor path is active (NVIDIA/Intel, not AMD AMF),
     // use RGBA output so the VP does YUV→RGB conversion. NVIDIA VSR requires
     // an RGB output format to activate on newer drivers.
-    if (m_VideoEnhancement->isVideoEnhancementEnabled() && !m_AmfInitialized) {
+    if (m_VideoEnhancement->isVideoEnhancementEnabled() && !m_Amf.isInitialized()) {
         m_VideoProcessorOutputRGBA = true;
         texDesc.Format = (m_DecoderParams.videoFormat & VIDEO_FORMAT_MASK_10BIT)
                              ? DXGI_FORMAT_R10G10B10A2_UNORM
@@ -2088,7 +2092,7 @@ bool D3D11VARenderer::setupVideoTexture(AVHWFramesContext* framesContext)
     }
     texDesc.CPUAccessFlags = 0;
     texDesc.MiscFlags = 0;
-    if (m_AmfInitialized) {
+    if (m_Amf.isInitialized()) {
         texDesc.MiscFlags |= D3D11_RESOURCE_MISC_SHARED;
     }
 
@@ -2635,83 +2639,28 @@ bool D3D11VARenderer::initializeVideoProcessor()
 
 bool D3D11VARenderer::enableAMDVideoSuperResolution(bool activate, bool logInfo, ID3D11Device* device)
 {
-    AMF_RESULT res;
-    amf::AMFCapsPtr amfCaps;
-    amf::AMFIOCapsPtr pInputCaps;
-
-    if (m_AmfInitialized && activate)
+    if (m_Amf.isInitialized() && activate) {
         return true;
-
-    // Use provided device or fall back to m_RenderDevice
-    ID3D11Device* dev = device ? device : m_RenderDevice.Get();
-    if (!dev) return false;
-
-    amf::AMF_SURFACE_FORMAT SurfaceFormatYUV;
-    AMFColor backgroundColor = AMFConstructColor(0, 0, 0, 255);
-
-    res = g_AMFFactory.Init();
-    if (res != AMF_OK) goto Error;
-    res = g_AMFFactory.GetFactory()->CreateContext(&m_AmfContext);
-    if (res != AMF_OK) goto Error;
-    res = g_AMFFactory.GetFactory()->CreateComponent(m_AmfContext, AMFHQScaler, &m_AmfUpScaler);
-    if (res != AMF_OK) goto Error;
-
-    res = m_AmfContext->InitDX11(dev);
-    if (res != AMF_OK) goto Error;
-
-    m_AmfUpScaler->GetCaps(&amfCaps);
-    if (amfCaps != nullptr && amfCaps->GetAccelerationType() == amf::AMF_ACCEL_NOT_SUPPORTED) {
-        if (logInfo) SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "The hardware does not support needed AMD AMF capabilities.");
-        goto Error;
     }
 
-    SurfaceFormatYUV = (m_DecoderParams.videoFormat & VIDEO_FORMAT_MASK_10BIT) ? amf::AMF_SURFACE_P010 : amf::AMF_SURFACE_NV12;
+    m_AmfUpScalerSharpness = m_OutputTexture.width != m_DecoderParams.width ||
+                             m_OutputTexture.height != m_DecoderParams.height;
+    AmfSession::Parameters parameters;
+    parameters.device = device ? device : m_RenderDevice.Get();
+    parameters.width = m_DecoderParams.width;
+    parameters.height = m_DecoderParams.height;
+    parameters.outputWidth = m_OutputTexture.width;
+    parameters.outputHeight = m_OutputTexture.height;
+    parameters.frameRate = m_DecoderParams.frameRate;
+    parameters.tenBit = (m_DecoderParams.videoFormat & VIDEO_FORMAT_MASK_10BIT) != 0;
+    parameters.sharpness = m_AmfUpScalerSharpness ? 0.30 : 2.00;
 
-    res = m_AmfContext->AllocSurface(amf::AMF_MEMORY_DX11,
-                                     SurfaceFormatYUV,
-                                     m_DecoderParams.width,
-                                     m_DecoderParams.height,
-                                     &m_AmfSurface);
-    if (res != AMF_OK) goto Error;
-
-    m_AmfUpScaler->SetProperty(AMF_HQ_SCALER_OUTPUT_SIZE, ::AMFConstructSize(m_DisplayWidth, m_DisplayHeight));
-    m_AmfUpScaler->SetProperty(AMF_HQ_SCALER_ENGINE_TYPE, amf::AMF_MEMORY_DX11);
-    m_AmfUpScaler->SetProperty(AMF_HQ_SCALER_ALGORITHM, AMF_HQ_SCALER_ALGORITHM_VIDEOSR1_0);
-    m_AmfUpScaler->SetProperty(AMF_HQ_SCALER_KEEP_ASPECT_RATIO, true);
-    m_AmfUpScaler->SetProperty(AMF_HQ_SCALER_FILL, true);
-    m_AmfUpScaler->SetProperty(AMF_HQ_SCALER_FILL_COLOR, backgroundColor);
-    if (m_OutputTexture.width == m_DecoderParams.width && m_OutputTexture.height == m_DecoderParams.height) {
-        m_AmfUpScalerSharpness = false;
-    } else {
-        m_AmfUpScalerSharpness = true;
+    const bool supported = activate ? m_Amf.initialize(parameters) : m_Amf.probe(parameters);
+    if (logInfo) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "AMD Video Super Resolution %s",
+                    supported ? (activate ? "enabled" : "disabled") : "failed");
     }
-    m_AmfUpScaler->SetProperty(AMF_HQ_SCALER_SHARPNESS, m_AmfUpScalerSharpness ? 0.30 : 2.00);
-    m_AmfUpScaler->SetProperty(AMF_HQ_SCALER_FRAME_RATE, m_DecoderParams.frameRate);
-    m_AmfUpScalerSurfaceFormat = SurfaceFormatYUV;
-    res = m_AmfUpScaler->Init(SurfaceFormatYUV,
-                              m_DecoderParams.width,
-                              m_DecoderParams.height);
-    if (res != AMF_OK) goto Error;
-
-    if (!activate) {
-        m_AmfUpScaler->Terminate();
-        m_AmfUpScaler = nullptr;
-        m_AmfContext->Terminate();
-        m_AmfContext = nullptr;
-        g_AMFFactory.Terminate();
-
-        if (logInfo) SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "AMD Video Super Resolution disabled");
-    } else {
-        if (logInfo) SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "AMD Video Super Resolution enabled");
-    }
-
-    m_AmfInitialized = activate;
-    return true;
-
-Error:
-    if (logInfo) SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "AMD Video Super Resolution failed.");
-    m_AmfInitialized = false;
-    return false;
+    return supported;
 }
 
 bool D3D11VARenderer::enableIntelVideoSuperResolution(bool activate, bool logInfo)
@@ -2853,16 +2802,29 @@ bool D3D11VARenderer::enableNvidiaHDR(bool activate, bool logInfo)
     return true;
 }
 
-void D3D11VARenderer::prepareEnhancedOutput(AVFrame* frame)
+bool D3D11VARenderer::prepareEnhancedOutput(AVFrame* frame)
 {
     bool frameFullRange = isFrameFullRange(frame);
     int frameColorSpace = getFrameColorspace(frame);
     int frameColorTrc = frame->color_trc;
 
     if (frameColorSpace == m_LastColorSpace && frameFullRange == m_LastFullRange && frameColorTrc == m_LastEnhColorTrc) {
-        return;
+        return true;
     }
 
+    const double sharpness =
+        frameColorSpace == COLORSPACE_REC_2020 || !m_AmfUpScalerSharpness ? 2.00 : 0.30;
+    if (m_Amf.isInitialized() && !m_Amf.setSharpness(sharpness)) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "AMF sharpness update failed; rebuilding video processor fallback");
+        if (!rebuildVideoProcessorFallback(frame)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                         "Failed to rebuild video processor fallback; resetting decoder");
+            return false;
+        }
+    }
+
+    // Reapply current color metadata after rebuilding the VP resources.
     m_LastColorSpace = frameColorSpace;
     m_LastFullRange = frameFullRange;
     m_LastEnhColorTrc = frameColorTrc;
@@ -2895,12 +2857,6 @@ void D3D11VARenderer::prepareEnhancedOutput(AVFrame* frame)
         } else if (m_VideoEnhancement->isVendorIntel()) {
             enableIntelVideoSuperResolution();
         }
-        if (m_AmfInitialized) {
-            m_AmfUpScaler->Flush();
-            m_AmfUpScaler->Terminate();
-            m_AmfUpScaler->SetProperty(AMF_HQ_SCALER_SHARPNESS, 2.00);
-            m_AmfUpScaler->Init(m_AmfUpScalerSurfaceFormat, m_DecoderParams.width, m_DecoderParams.height);
-        }
         break;
     }
 
@@ -2921,13 +2877,34 @@ void D3D11VARenderer::prepareEnhancedOutput(AVFrame* frame)
         } else if (m_VideoEnhancement->isVendorIntel()) {
             enableIntelVideoSuperResolution(false);
         }
-        if (m_AmfInitialized) {
-            m_AmfUpScaler->Flush();
-            m_AmfUpScaler->Terminate();
-            m_AmfUpScaler->SetProperty(AMF_HQ_SCALER_SHARPNESS, m_AmfUpScalerSharpness ? 0.30 : 2.00);
-            m_AmfUpScaler->Init(m_AmfUpScalerSurfaceFormat, m_DecoderParams.width, m_DecoderParams.height);
-        }
     }
+    return true;
+}
+
+bool D3D11VARenderer::rebuildVideoProcessorFallback(AVFrame* frame)
+{
+    // AMF has already reset. Its output-sized YUV textures and views cannot be
+    // reused as the source-sized VP input or the RGBA VP output.
+    SDL_assert(!m_Amf.isInitialized());
+    SDL_assert(!m_BindDecoderOutputTextures);
+    m_StreamData = {};
+    m_InputView.Reset();
+    m_OutputView.Reset();
+    m_EnhancedTexture.Reset();
+    m_AmfTexture.Reset();
+    m_VideoTextureResourceViews.clear();
+    m_VideoTexture.Reset();
+    m_VideoVertexBuffer.Reset();
+
+    if (!m_VideoProcessor && !createVideoProcessor()) {
+        return false;
+    }
+    auto* framesContext = reinterpret_cast<AVHWFramesContext*>(frame->hw_frames_ctx->data);
+    if (!setupVideoTexture(framesContext) || !setupEnhancedTexture() ||
+        !initializeVideoProcessor()) {
+        return false;
+    }
+    return true;
 }
 
 bool D3D11VARenderer::setupAmfTexture()
@@ -2957,7 +2934,7 @@ bool D3D11VARenderer::setupEnhancedTexture()
     HRESULT hr;
     D3D11_TEXTURE2D_DESC texDesc = {};
 
-    if (m_AmfInitialized) {
+    if (m_Amf.isInitialized()) {
         texDesc.Width = m_OutputTexture.width;
         texDesc.Height = m_OutputTexture.height;
     } else {
@@ -2973,7 +2950,7 @@ bool D3D11VARenderer::setupEnhancedTexture()
     texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
     texDesc.CPUAccessFlags = 0;
     texDesc.MiscFlags = 0;
-    if (m_AmfInitialized) {
+    if (m_Amf.isInitialized()) {
         texDesc.MiscFlags |= D3D11_RESOURCE_MISC_SHARED;
     }
 

@@ -223,6 +223,8 @@ jobs:
         rem 新增测试时在这里加一对 call + errorlevel 检查即可。
         call scripts\run-test.bat ds5_ir_renderer ds5_ir_renderer_test
         if errorlevel 1 exit /b %ERRORLEVEL%
+        call scripts\run-test.bat ds5_haptics_worker ds5_haptics_worker_test
+        if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat pen_history_selection pen_history_selection_test
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat stylus_replay stylus_replay_test
@@ -268,6 +270,10 @@ jobs:
         call scripts\run-test.bat file_mapping_websocket_framing file_mapping_websocket_framing
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat shared_helpers shared_helpers
+        if errorlevel 1 exit /b %ERRORLEVEL%
+        call scripts\run-test.bat amf_lifecycle amf_lifecycle
+        if errorlevel 1 exit /b %ERRORLEVEL%
+        call scripts\run-test.bat video_texture_sampling video_texture_sampling
         if errorlevel 1 exit /b %ERRORLEVEL%
         call scripts\run-test.bat file_mapping_transport file_mapping_transport
         if errorlevel 1 exit /b %ERRORLEVEL%
@@ -397,6 +403,24 @@ jobs:
     - name: Build and generate DMG
       run: |
         scripts/generate-dmg.sh Release
+
+    - name: Verify DMG app bundle signature
+      run: |
+        # qiin2333/moonlight-qt#285: 防止再次发布签名 Identifier 与 Bundle ID
+        # 不一致、或整包校验不通过的产物。generate-dmg.sh 里已有同样校验,
+        # 这里针对最终 DMG 里的 app 再验一遍。
+        DMG=$(ls build/installer-Release/*.dmg | head -1)
+        test -n "$DMG" || { echo "no DMG found" >&2; exit 1; }
+        MNT=$(mktemp -d /tmp/dmgverify.XXXXXX)
+        hdiutil attach "$DMG" -readonly -nobrowse -mountpoint "$MNT"
+        APP="$MNT/Moonlight.app"
+        codesign --verify --deep --strict "$APP"
+        BUNDLE_ID=$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")
+        SIGNED_ID=$(codesign -dv "$APP" 2>&1 | sed -n 's/^Identifier=\(.*\)$/\1/p')
+        echo "CFBundleIdentifier=$BUNDLE_ID"
+        echo "Signature identifier=$SIGNED_ID"
+        test "$BUNDLE_ID" = "$SIGNED_ID"
+        hdiutil detach "$MNT"
 
     - name: Smoke test USB forwarding helper
       run: |

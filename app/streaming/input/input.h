@@ -203,7 +203,7 @@ public:
 
     void setAdaptiveTriggers(uint16_t controllerNumber, DualSenseOutputReport *report);
 
-    int getDualSenseHapticsControllerNumber() const;
+    int getDualSenseHapticsControllerNumber(SDL_JoystickID* instanceId = nullptr) const;
 
     // 提示文案用的手柄 UI 风格：取第一只已连接手柄，未连接回落 Xbox 布局
     GamepadUiStyle getGamepadUiStyle() const;
@@ -226,7 +226,10 @@ public:
 
     int getAttachedGamepadMask();
 
-    void raiseAllKeys(bool clearKeys = true);
+    // Release locally held keys. Connection-boundary cleanup can also include the
+    // forwarded-key ledger and decide whether to clear it after the attempt.
+    void raiseAllKeys(bool clearLocalKeys = true, bool includeForwardedKeys = false,
+                      bool clearForwardedKeys = false);
     bool hasKeysDown() const { return !m_KeysDown.isEmpty(); }
 
     void notifyMouseLeave();
@@ -452,6 +455,7 @@ private:
     int m_GamepadMask;
     GamepadState m_GamepadState[MAX_GAMEPADS];
     QSet<uint32_t> m_KeysDown;
+    QSet<uint32_t> m_ForwardedKeys;
     bool m_FakeMouseCaptureActive;
     bool m_KeyboardCaptureActive;
     QString m_OldIgnoreDevices;

@@ -264,7 +264,7 @@ SOURCES += \
     streaming/audio/audio.cpp \
     streaming/audio/dualsensehaptics.cpp \
     streaming/audio/renderers/sdlaud.cpp \
-    streaming/network/bandwidth.cpp \
+    streaming/bandwidth.cpp \
     gui/computermodel.cpp \
     gui/appmodel.cpp \
     streaming/streamutils.cpp \
@@ -338,11 +338,12 @@ HEADERS += \
     streaming/audio/dualsensehapticscalibration.h \
     streaming/audio/dualsensehapticsrouting.h \
     streaming/audio/dualsensehapticsstream.h \
+    streaming/audio/dualsensehapticscontrol.h \
     streaming/audio/renderers/sdl.h \
     gui/computermodel.h \
     gui/appmodel.h \
     streaming/video/decoder.h \
-    streaming/network/bandwidth.h \
+    streaming/bandwidth.h \
     streaming/streamutils.h \
     backend/autoupdatechecker.h \
     backend/portableupdateinstaller.h \
@@ -548,11 +549,14 @@ win32:!winrt {
     SOURCES += \
         streaming/video/ffmpeg-renderers/dxva2.cpp \
         streaming/video/ffmpeg-renderers/d3d11va.cpp \
+        streaming/video/ffmpeg-renderers/amfsession.cpp \
         streaming/video/ffmpeg-renderers/pacer/dxvsyncsource.cpp
 
     HEADERS += \
         streaming/video/ffmpeg-renderers/dxva2.h \
         streaming/video/ffmpeg-renderers/d3d11va.h \
+        streaming/video/ffmpeg-renderers/amfsession.h \
+        streaming/video/ffmpeg-renderers/videotexturesampling.h \
         streaming/video/ffmpeg-renderers/pacer/dxvsyncsource.h
 }
 win32:!winrt {
