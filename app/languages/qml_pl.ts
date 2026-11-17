@@ -1172,6 +1172,14 @@
         <translation>Ustawienia kontrolera</translation>
     </message>
     <message>
+        <source>Use gamepad to navigate Moonlight UI</source>
+        <translation>Używaj kontrolera do nawigacji po interfejsie Moonlight</translation>
+    </message>
+    <message>
+        <source>When disabled, gamepads do not control the Moonlight desktop interface. Gamepad input during streaming is unaffected.</source>
+        <translation>Po wyłączeniu kontrolery nie sterują interfejsem pulpitu Moonlight. Działanie kontrolera podczas strumieniowania pozostaje bez zmian.</translation>
+    </message>
+    <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="824"/>
         <source>Swap A/B and X/Y gamepad buttons</source>
         <translation>Zamień przyciski A/B i X/Y</translation>
@@ -1352,6 +1360,42 @@
         <location filename="../gui/settings/LegacySettingsPage.qml" line="1214"/>
         <source>The performance overlay is not supported on Steam Link or Raspberry Pi.</source>
         <translation>Nakładka wydajności nie jest obsługiwana na Steam Link lub Raspberry Pi.</translation>
+    </message>
+    <message>
+        <source>(Default)</source>
+        <translation>(Domyślne)</translation>
+    </message>
+    <message>
+        <source>Disabled</source>
+        <translation>Wyłączone</translation>
+    </message>
+    <message>
+        <source>Joystick deadzone</source>
+        <translation>Martwa strefa joysticka</translation>
+    </message>
+    <message>
+        <source>Ignores stick deflections below this percentage, e.g. to compensate for a drifting stick. 0% sends stick input unmodified.</source>
+        <translation>Ignoruje wychylenia drążka poniżej tego procentu, na przykład w celu kompensacji dryfu. Przy 0% wejście z drążka jest wysyłane bez zmian.</translation>
+    </message>
+    <message>
+        <source>Enable mouse control with gamepads by holding the &apos;%1&apos; button</source>
+        <translation>Przytrzymaj przycisk „%1”, aby włączyć sterowanie myszą za pomocą gamepada</translation>
+    </message>
+    <message>
+        <source>While this is off, holding %1 opens the in-stream overlay menu instead.</source>
+        <translation>Gdy ta opcja jest wyłączona, przytrzymanie %1 otwiera zamiast tego menu nakładki podczas strumieniowania.</translation>
+    </message>
+    <message>
+        <source>With a gamepad connected, holding %1 also opens the menu while this is not Disabled (requires Gamepad Mouse to be off).</source>
+        <translation>Po podłączeniu gamepada przytrzymanie %1 również otwiera menu, gdy ta opcja nie jest ustawiona na „Wyłączone” (wymaga wyłączenia myszy gamepada).</translation>
+    </message>
+    <message>
+        <source>You can toggle it at any time while streaming using %1 or %2.</source>
+        <translation>Podczas strumieniowania możesz w każdej chwili przełączać tę funkcję za pomocą %1 lub %2.</translation>
+    </message>
+    <message>
+        <source>Floating button (default)</source>
+        <translation>Przycisk pływający (domyślnie)</translation>
     </message>
 </context>
 <context>

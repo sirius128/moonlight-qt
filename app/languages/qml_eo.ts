@@ -1172,6 +1172,14 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Use gamepad to navigate Moonlight UI</source>
+        <translation>Uzi ludregilon por navigi en la interfaco de Moonlight</translation>
+    </message>
+    <message>
+        <source>When disabled, gamepads do not control the Moonlight desktop interface. Gamepad input during streaming is unaffected.</source>
+        <translation>Kiam malŝaltita, ludregiloj ne regas la labortablan interfacon de Moonlight. Enigo de ludregilo dum fluo ne estas tuŝita.</translation>
+    </message>
+    <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="824"/>
         <source>Swap A/B and X/Y gamepad buttons</source>
         <translation type="unfinished"></translation>
@@ -1352,6 +1360,42 @@
         <location filename="../gui/settings/LegacySettingsPage.qml" line="1214"/>
         <source>The performance overlay is not supported on Steam Link or Raspberry Pi.</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>(Default)</source>
+        <translation>(Defaŭlta)</translation>
+    </message>
+    <message>
+        <source>Disabled</source>
+        <translation>Malŝaltita</translation>
+    </message>
+    <message>
+        <source>Joystick deadzone</source>
+        <translation>Mortzono de stirstango</translation>
+    </message>
+    <message>
+        <source>Ignores stick deflections below this percentage, e.g. to compensate for a drifting stick. 0% sends stick input unmodified.</source>
+        <translation>Ignoras stirstangajn deflankiĝojn sub ĉi tiu procento, ekzemple por kompensi drivadon. Je 0% la stirstanga enigo estas sendata senŝanĝe.</translation>
+    </message>
+    <message>
+        <source>Enable mouse control with gamepads by holding the &apos;%1&apos; button</source>
+        <translation>Tenu la butonon &apos;%1&apos; por ŝalti musan kontrolon per ludregilo</translation>
+    </message>
+    <message>
+        <source>While this is off, holding %1 opens the in-stream overlay menu instead.</source>
+        <translation>Kiam ĉi tio estas malŝaltita, teni %1 anstataŭe malfermas la surfluan ŝprucmenuon.</translation>
+    </message>
+    <message>
+        <source>With a gamepad connected, holding %1 also opens the menu while this is not Disabled (requires Gamepad Mouse to be off).</source>
+        <translation>Kun konektita ludregilo, teni %1 ankaŭ malfermas la menuon kiam ĉi tio ne estas Malŝaltita (postulas ke Ludregila Muso estu malŝaltita).</translation>
+    </message>
+    <message>
+        <source>You can toggle it at any time while streaming using %1 or %2.</source>
+        <translation>Vi povas ŝalti aŭ malŝalti ĝin iam ajn dum fluado per %1 aŭ %2.</translation>
+    </message>
+    <message>
+        <source>Floating button (default)</source>
+        <translation>Ŝveba butono (defaŭlta)</translation>
     </message>
 </context>
 <context>

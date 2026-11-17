@@ -1172,6 +1172,14 @@
         <translation>Cài đặt tay cầm điều khiển</translation>
     </message>
     <message>
+        <source>Use gamepad to navigate Moonlight UI</source>
+        <translation>Dùng tay cầm để điều hướng giao diện Moonlight</translation>
+    </message>
+    <message>
+        <source>When disabled, gamepads do not control the Moonlight desktop interface. Gamepad input during streaming is unaffected.</source>
+        <translation>Khi tắt, tay cầm sẽ không điều khiển giao diện máy tính để bàn của Moonlight. Tín hiệu từ tay cầm trong khi truyền phát không bị ảnh hưởng.</translation>
+    </message>
+    <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="824"/>
         <source>Swap A/B and X/Y gamepad buttons</source>
         <translation>Đảo các nút A/B và X/Y của tay cầm điều khiển</translation>
@@ -1352,6 +1360,42 @@
         <location filename="../gui/settings/LegacySettingsPage.qml" line="1214"/>
         <source>The performance overlay is not supported on Steam Link or Raspberry Pi.</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>(Default)</source>
+        <translation>(Mặc định)</translation>
+    </message>
+    <message>
+        <source>Disabled</source>
+        <translation>Đã tắt</translation>
+    </message>
+    <message>
+        <source>Joystick deadzone</source>
+        <translation>Vùng chết cần điều khiển</translation>
+    </message>
+    <message>
+        <source>Ignores stick deflections below this percentage, e.g. to compensate for a drifting stick. 0% sends stick input unmodified.</source>
+        <translation>Bỏ qua độ lệch của cần điều khiển dưới phần trăm này, chẳng hạn để bù cho hiện tượng trôi cần. Ở mức 0%, dữ liệu đầu vào của cần được gửi nguyên trạng.</translation>
+    </message>
+    <message>
+        <source>Enable mouse control with gamepads by holding the &apos;%1&apos; button</source>
+        <translation>Nhấn giữ nút “%1” để bật điều khiển chuột bằng tay cầm</translation>
+    </message>
+    <message>
+        <source>While this is off, holding %1 opens the in-stream overlay menu instead.</source>
+        <translation>Khi tắt tùy chọn này, nhấn giữ %1 sẽ mở menu lớp phủ trong phiên truyền phát.</translation>
+    </message>
+    <message>
+        <source>With a gamepad connected, holding %1 also opens the menu while this is not Disabled (requires Gamepad Mouse to be off).</source>
+        <translation>Khi đã kết nối tay cầm, nhấn giữ %1 cũng mở menu nếu tùy chọn này không ở trạng thái “Đã tắt” (cần tắt Chuột tay cầm).</translation>
+    </message>
+    <message>
+        <source>You can toggle it at any time while streaming using %1 or %2.</source>
+        <translation>Bạn có thể bật tắt tùy chọn này bất cứ lúc nào trong khi truyền phát bằng %1 hoặc %2.</translation>
+    </message>
+    <message>
+        <source>Floating button (default)</source>
+        <translation>Nút nổi (mặc định)</translation>
     </message>
 </context>
 <context>

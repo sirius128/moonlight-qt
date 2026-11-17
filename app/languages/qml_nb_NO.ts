@@ -1172,6 +1172,14 @@
         <translation>Spillkontrolller-innstillinger</translation>
     </message>
     <message>
+        <source>Use gamepad to navigate Moonlight UI</source>
+        <translation>Bruk spillkontroller til å navigere i Moonlight-grensesnittet</translation>
+    </message>
+    <message>
+        <source>When disabled, gamepads do not control the Moonlight desktop interface. Gamepad input during streaming is unaffected.</source>
+        <translation>Når dette er deaktivert, styrer spillkontrollere ikke Moonlights skrivebordsgrensesnitt. Spillkontrollerinngang under strømming påvirkes ikke.</translation>
+    </message>
+    <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="824"/>
         <source>Swap A/B and X/Y gamepad buttons</source>
         <translation>Bytt A/B- og X/Y-spillkontrollerknapper</translation>
@@ -1352,6 +1360,42 @@
         <location filename="../gui/settings/LegacySettingsPage.qml" line="1214"/>
         <source>The performance overlay is not supported on Steam Link or Raspberry Pi.</source>
         <translation>Ytelsesoverlegget støttes ikke på Steam Link og Raspberry Pi.</translation>
+    </message>
+    <message>
+        <source>(Default)</source>
+        <translation>(Standard)</translation>
+    </message>
+    <message>
+        <source>Disabled</source>
+        <translation>Deaktivert</translation>
+    </message>
+    <message>
+        <source>Joystick deadzone</source>
+        <translation>Dødsonen for styrespaken</translation>
+    </message>
+    <message>
+        <source>Ignores stick deflections below this percentage, e.g. to compensate for a drifting stick. 0% sends stick input unmodified.</source>
+        <translation>Ignorerer styrespakutslag under denne prosentverdien, for eksempel for å kompensere for drifting. Ved 0 % sendes styrespakinndata uendret.</translation>
+    </message>
+    <message>
+        <source>Enable mouse control with gamepads by holding the &apos;%1&apos; button</source>
+        <translation>Hold inne «%1»-knappen for å aktivere musekontroll med spillkontroller</translation>
+    </message>
+    <message>
+        <source>While this is off, holding %1 opens the in-stream overlay menu instead.</source>
+        <translation>Når dette er av, åpner du i stedet overleggsmenyen i strømmingen ved å holde inne %1.</translation>
+    </message>
+    <message>
+        <source>With a gamepad connected, holding %1 also opens the menu while this is not Disabled (requires Gamepad Mouse to be off).</source>
+        <translation>Når en spillkontroller er tilkoblet, åpner du også menyen ved å holde inne %1 når dette ikke er satt til «Deaktivert» (krever at Spillkontrollermus er av).</translation>
+    </message>
+    <message>
+        <source>You can toggle it at any time while streaming using %1 or %2.</source>
+        <translation>Du kan slå dette av og på når som helst under strømming med %1 eller %2.</translation>
+    </message>
+    <message>
+        <source>Floating button (default)</source>
+        <translation>Flytende knapp (standard)</translation>
     </message>
 </context>
 <context>

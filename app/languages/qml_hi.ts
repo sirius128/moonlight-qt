@@ -1172,6 +1172,14 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <source>Use gamepad to navigate Moonlight UI</source>
+        <translation>Moonlight UI में नेविगेट करने के लिए गेमपैड का उपयोग करें</translation>
+    </message>
+    <message>
+        <source>When disabled, gamepads do not control the Moonlight desktop interface. Gamepad input during streaming is unaffected.</source>
+        <translation>अक्षम होने पर गेमपैड Moonlight के डेस्कटॉप इंटरफ़ेस को नियंत्रित नहीं करेंगे। स्ट्रीमिंग के दौरान गेमपैड इनपुट प्रभावित नहीं होगा।</translation>
+    </message>
+    <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="824"/>
         <source>Swap A/B and X/Y gamepad buttons</source>
         <translation type="unfinished"></translation>
@@ -1352,6 +1360,42 @@
         <location filename="../gui/settings/LegacySettingsPage.qml" line="1214"/>
         <source>The performance overlay is not supported on Steam Link or Raspberry Pi.</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>(Default)</source>
+        <translation>(डिफ़ॉल्ट)</translation>
+    </message>
+    <message>
+        <source>Disabled</source>
+        <translation>अक्षम</translation>
+    </message>
+    <message>
+        <source>Joystick deadzone</source>
+        <translation>जॉयस्टिक डेड ज़ोन</translation>
+    </message>
+    <message>
+        <source>Ignores stick deflections below this percentage, e.g. to compensate for a drifting stick. 0% sends stick input unmodified.</source>
+        <translation>इस प्रतिशत से कम स्टिक के झुकाव को अनदेखा करता है, जैसे स्टिक ड्रिफ्ट की भरपाई के लिए। 0% पर स्टिक इनपुट बिना बदलाव के भेजा जाता है।</translation>
+    </message>
+    <message>
+        <source>Enable mouse control with gamepads by holding the &apos;%1&apos; button</source>
+        <translation>गेमपैड से माउस नियंत्रण सक्षम करने के लिए &apos;%1&apos; बटन दबाकर रखें</translation>
+    </message>
+    <message>
+        <source>While this is off, holding %1 opens the in-stream overlay menu instead.</source>
+        <translation>इसके बंद होने पर, %1 को दबाकर रखने से इसके बजाय स्ट्रीम के अंदर ओवरले मेनू खुलता है।</translation>
+    </message>
+    <message>
+        <source>With a gamepad connected, holding %1 also opens the menu while this is not Disabled (requires Gamepad Mouse to be off).</source>
+        <translation>गेमपैड कनेक्ट होने पर, जब यह &apos;अक्षम&apos; नहीं है तब %1 को दबाकर रखने से मेनू भी खुलता है (गेमपैड माउस बंद होना चाहिए)।</translation>
+    </message>
+    <message>
+        <source>You can toggle it at any time while streaming using %1 or %2.</source>
+        <translation>स्ट्रीमिंग के दौरान %1 या %2 का उपयोग करके इसे कभी भी टॉगल कर सकते हैं।</translation>
+    </message>
+    <message>
+        <source>Floating button (default)</source>
+        <translation>फ्लोटिंग बटन (डिफ़ॉल्ट)</translation>
     </message>
 </context>
 <context>

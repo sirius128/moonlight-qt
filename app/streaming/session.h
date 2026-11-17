@@ -148,6 +148,15 @@ public:
         return s_ActiveSession;
     }
 
+    // Pull renderers receive decode units without drSubmitDecodeUnit(), so
+    // they report the first one here. Auto-reconnect depends on it.
+    static void markVideoReceived()
+    {
+        if (s_ActiveSession != nullptr) {
+            s_ActiveSession->m_HasReceivedVideo = true;
+        }
+    }
+
     Overlay::OverlayManager& getOverlayManager()
     {
         return m_OverlayManager;
@@ -233,6 +242,7 @@ private:
     void hideQtOverlayMenu();
     void toggleQtOverlayMenu();
     bool isStreamingWindowVisible() const;
+    bool isStreamingWindowFocused() const;
     bool isStreamingWindowMinimized() const;
     void syncQtOverlayWindowsWithSdlWindowState();
     QRect qtOverlayParentGeometry() const;
@@ -329,6 +339,8 @@ private:
     static
     void clDs5HapticsPcm(const LI_DS5_HAPTICS_PCM_FRAME* frame);
 
+    static void clDs5HapticsState(std::uint16_t controllerNumber, const std::uint8_t* state);
+
     static
     void clDs5HapticsIrV2(const LI_DS5_HAPTICS_IR_FRAME_V2* frame);
 
@@ -402,7 +414,9 @@ private:
     // Graceful reconnect state
     bool m_ConnectionInterrupted;        // set by clConnectionTerminated for recoverable errors
     bool m_SuppressConnectionErrorDialog; // suppress error dialogs during reconnect attempts
-    bool m_HasReceivedVideo;             // true after the first decode unit of the current connection
+    // True after the first decode unit of the current connection. Set on the
+    // decoder thread (push or pull renderer), read on the connection thread.
+    std::atomic<bool> m_HasReceivedVideo;
     int m_LastTerminationErrorCode;      // stored to show final error if reconnect gives up
 
     bool m_AsyncConnectionSuccess;

@@ -1172,6 +1172,14 @@
         <translation>Configurações do Controle</translation>
     </message>
     <message>
+        <source>Use gamepad to navigate Moonlight UI</source>
+        <translation>Usar o gamepad para navegar pela interface do Moonlight</translation>
+    </message>
+    <message>
+        <source>When disabled, gamepads do not control the Moonlight desktop interface. Gamepad input during streaming is unaffected.</source>
+        <translation>Quando desativado, os gamepads não controlam a interface de desktop do Moonlight. A entrada do gamepad durante a transmissão não é afetada.</translation>
+    </message>
+    <message>
         <location filename="../gui/settings/LegacySettingsPage.qml" line="824"/>
         <source>Swap A/B and X/Y gamepad buttons</source>
         <translation>Troque os botões do controle A/B e X/Y</translation>
@@ -1352,6 +1360,42 @@
         <location filename="../gui/settings/LegacySettingsPage.qml" line="1214"/>
         <source>The performance overlay is not supported on Steam Link or Raspberry Pi.</source>
         <translation>A sobreposição de desempenho não é suportada no Steam Link ou Raspberry Pi.</translation>
+    </message>
+    <message>
+        <source>(Default)</source>
+        <translation>(Padrão)</translation>
+    </message>
+    <message>
+        <source>Disabled</source>
+        <translation>Desativado</translation>
+    </message>
+    <message>
+        <source>Joystick deadzone</source>
+        <translation>Zona morta do joystick</translation>
+    </message>
+    <message>
+        <source>Ignores stick deflections below this percentage, e.g. to compensate for a drifting stick. 0% sends stick input unmodified.</source>
+        <translation>Ignora desvios do analógico abaixo desta porcentagem, por exemplo, para compensar o drift. Em 0%, a entrada do analógico é enviada sem alterações.</translation>
+    </message>
+    <message>
+        <source>Enable mouse control with gamepads by holding the &apos;%1&apos; button</source>
+        <translation>Mantenha o botão “%1” pressionado para ativar o controle do mouse com o gamepad</translation>
+    </message>
+    <message>
+        <source>While this is off, holding %1 opens the in-stream overlay menu instead.</source>
+        <translation>Quando isso está desativado, manter %1 pressionado abre o menu sobreposto durante a transmissão.</translation>
+    </message>
+    <message>
+        <source>With a gamepad connected, holding %1 also opens the menu while this is not Disabled (requires Gamepad Mouse to be off).</source>
+        <translation>Com um gamepad conectado, manter %1 pressionado também abre o menu quando isso não está definido como “Desativado” (requer que o Mouse do gamepad esteja desativado).</translation>
+    </message>
+    <message>
+        <source>You can toggle it at any time while streaming using %1 or %2.</source>
+        <translation>Você pode alternar isso a qualquer momento durante a transmissão usando %1 ou %2.</translation>
+    </message>
+    <message>
+        <source>Floating button (default)</source>
+        <translation>Botão flutuante (padrão)</translation>
     </message>
 </context>
 <context>

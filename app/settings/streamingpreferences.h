@@ -19,6 +19,15 @@ public:
 
     void reload();
 
+    // Applies a process-local UI navigation override. save() keeps the user's
+    // persisted value instead of writing this launch override back to disk.
+    void setGamepadUiNavigationLaunchOverride(bool enabled);
+
+    // Settings-page writes end the temporary override so explicit choices
+    // persist like any other preference.
+    bool gamepadUiNavigationEnabled() const { return enableGamepadUiNavigation; }
+    void setGamepadUiNavigationEnabled(bool enabled);
+
     enum AudioConfig
     {
         AC_STEREO,
@@ -270,6 +279,8 @@ public:
     Q_PROPERTY(bool swapWinAltKeys MEMBER swapWinAltKeys NOTIFY swapWinAltKeysChanged)
     Q_PROPERTY(bool muteOnFocusLoss MEMBER muteOnFocusLoss NOTIFY muteOnFocusLossChanged)
     Q_PROPERTY(bool backgroundGamepad MEMBER backgroundGamepad NOTIFY backgroundGamepadChanged)
+    Q_PROPERTY(bool enableGamepadUiNavigation READ gamepadUiNavigationEnabled WRITE
+                   setGamepadUiNavigationEnabled NOTIFY enableGamepadUiNavigationChanged)
     Q_PROPERTY(GamepadQuitCombo gamepadQuitCombo MEMBER gamepadQuitCombo NOTIFY gamepadQuitComboChanged)
     Q_PROPERTY(bool reverseScrollDirection MEMBER reverseScrollDirection NOTIFY reverseScrollDirectionChanged)
     Q_PROPERTY(bool swapFaceButtons MEMBER swapFaceButtons NOTIFY swapFaceButtonsChanged)
@@ -328,6 +339,7 @@ public:
     bool swapWinAltKeys;
     bool muteOnFocusLoss;
     bool backgroundGamepad;
+    bool enableGamepadUiNavigation;
     GamepadQuitCombo gamepadQuitCombo;
 
     // Stick deadzone in percent (0-30); 0 passes stick input through unmodified
@@ -416,6 +428,7 @@ signals:
     void swapWinAltKeysChanged();
     void muteOnFocusLossChanged();
     void backgroundGamepadChanged();
+    void enableGamepadUiNavigationChanged();
     void gamepadQuitComboChanged();
     void gamepadDeadzoneChanged();
     void reverseScrollDirectionChanged();
@@ -445,5 +458,7 @@ private:
     bool m_BackgroundSetupCompleted;
 
     QQmlEngine* m_QmlEngine;
+    bool m_HasGamepadUiNavigationLaunchOverride;
+    bool m_PersistedGamepadUiNavigation;
 };
 
