@@ -38,6 +38,7 @@ main() 短、被测逻辑走生产源文件直编(见各 .pro 的 SOURCES)。
 | stylus_replay | 手写笔录制回放 | Windows |
 | overlay_event_wake_state | 悬浮菜单事件唤醒状态 | Windows |
 | overlay_button_native_wake | 悬浮按钮原生唤醒 | Windows + macOS + Linux(xvfb) |
+| coreaudio_channel_map | macOS CoreAudio 直通时按扬声器标签生成声道映射(HDMI 中置/LFE 互换、输出偏移、标签别名、无法匹配时回退 SDL) | macOS |
 | overlay_toast_event_state | 悬浮 toast 事件状态 | Windows |
 | overlay_menu_navigation | 悬浮菜单键盘/鼠标导航(QTest 事件,需 offscreen) | Windows |
 | settings_localization | 中文翻译 .qm + 设置页布局(qmltestrunner) | Windows |
