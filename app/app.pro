@@ -605,6 +605,7 @@ macx {
 
     SOURCES += \
         streaming/audio/renderers/coreaudio.cpp \
+        streaming/audio/renderers/coreaudiochannelmap.cpp \
         streaming/audio/renderers/coreaudiospatial.cpp \
         streaming/video/ffmpeg-renderers/vt_base.mm \
         streaming/video/ffmpeg-renderers/vt_avsamplelayer.mm \
@@ -612,6 +613,7 @@ macx {
 
     HEADERS += \
         streaming/audio/renderers/coreaudio.h \
+        streaming/audio/renderers/coreaudiochannelmap.h \
         streaming/audio/renderers/coreaudiospatial.h \
         streaming/video/ffmpeg-renderers/vt.h
 }
