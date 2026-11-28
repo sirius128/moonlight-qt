@@ -59,6 +59,30 @@ Column {
             }
         }
 
+        ChoiceRow {
+            applicable: SystemProperties.isDarwin
+            title: qsTr("Spatial audio")
+            description: qsTr("Renders surround sound with Apple's spatial audio on headphones and built-in speakers. Disable it if you don't want binaural processing, such as with USB or Bluetooth speakers.")
+            controlEnabled: StreamingPreferences.audioConfig !== StreamingPreferences.AC_STEREO
+            selectedValue: StreamingPreferences.spatialAudioConfig
+            onValueActivated: function(value) { StreamingPreferences.spatialAudioConfig = value }
+
+            model: ListModel {
+                ListElement { text: qsTr("Automatic"); val: StreamingPreferences.SAC_AUTO }
+                ListElement { text: qsTr("Disabled"); val: StreamingPreferences.SAC_DISABLED }
+            }
+        }
+
+        ToggleRow {
+            applicable: SystemProperties.isDarwin
+            title: qsTr("Head tracking")
+            description: qsTr("Requires supported AirPods or Beats headphones.")
+            controlEnabled: StreamingPreferences.audioConfig !== StreamingPreferences.AC_STEREO &&
+                            StreamingPreferences.spatialAudioConfig !== StreamingPreferences.SAC_DISABLED
+            checked: StreamingPreferences.spatialHeadTracking
+            onToggled: function(value) { StreamingPreferences.spatialHeadTracking = value }
+        }
+
         ToggleRow {
             title: qsTr("Mute host PC speakers while streaming")
             searchKeywords: "Mute host PC speakers while streaming"
@@ -732,6 +756,29 @@ Column {
                 ListElement { text: "Metal"; val: StreamingPreferences.RS_METAL }
                 ListElement { text: "AVSampleBufferDisplayLayer"; val: StreamingPreferences.RS_AVSBDL }
             }
+        }
+
+        ToggleRow {
+            title: qsTr("Try PyroWave decoding (Experimental)")
+            searchKeywords: "PyroWave decoding Experimental"
+            readonly property bool requested: StreamingPreferences.enablePyrowave || StreamingPreferences.pyrowaveForcedByEnvironment
+            controlEnabled: StreamingPreferences.pyrowaveAvailable && !StreamingPreferences.pyrowaveForcedByEnvironment
+            checked: StreamingPreferences.pyrowaveAvailable && requested
+            description: !StreamingPreferences.pyrowaveAvailable
+                         ? qsTr("PyroWave support is not included in this build.")
+                         : (qsTr("Attempts PyroWave when both this device and the host support it. Otherwise, the stream uses the preferred video codec. Supports SDR, HDR10 and HLG in YUV 4:2:0. Requires automatic codec selection, automatic or Vulkan rendering, and hardware decoding.") +
+                            (StreamingPreferences.pyrowaveForcedByEnvironment
+                             ? "\n" + qsTr("Enabled by MOONLIGHT_ENABLE_PYROWAVE=1. Remove it from the launch environment to change this setting.") : "") +
+                            (requested && !StreamingPreferences.pyrowaveColorOverridesCompatible
+                             ? "\n" + qsTr("Custom color overrides must use full range and match the stream: BT.709 for SDR, BT.2020 for HDR.") : "") +
+                            (requested &&
+                             (StreamingPreferences.videoCodecConfig !== StreamingPreferences.VCC_AUTO ||
+                              StreamingPreferences.videoDecoderSelection === StreamingPreferences.VDS_FORCE_SOFTWARE ||
+                              (StreamingPreferences.rendererSelection !== StreamingPreferences.RS_AUTO &&
+                               StreamingPreferences.rendererSelection !== StreamingPreferences.RS_VULKAN) ||
+                              StreamingPreferences.enableYUV444)
+                             ? "\n" + qsTr("Current video settings are incompatible; the preferred video codec will be used.") : ""))
+            onToggled: function(value) { StreamingPreferences.enablePyrowave = value }
         }
 
         ToggleRow {

@@ -102,6 +102,10 @@ unix:if(!macx|disable-prebuilts) {
             PKGCONFIG += libavcodec libavutil libswscale
             CONFIG += ffmpeg
 
+            !disable-pyrowave:packagesExist(pyrowave-shared) {
+                CONFIG += pyrowave
+            }
+
             !disable-libva {
                 packagesExist(libva) {
                     !disable-x11 {
@@ -214,12 +218,18 @@ macx {
         CONFIG += discord-rpc libplacebo
     }
 
+    # PyroWave is distributed separately from the macOS dependency bundle.
+    # Use its pkg-config metadata when the optional shared library is present.
+    !disable-prebuilts:!disable-pyrowave:packagesExist(pyrowave-shared) {
+        CONFIG += pyrowave
+    }
+
     LIBS += -lobjc -framework VideoToolbox -framework AVFoundation -framework CoreVideo -framework CoreGraphics -framework CoreMedia -framework AppKit -framework UniformTypeIdentifiers -framework Metal -framework MetalFx -framework QuartzCore -framework GameController -framework CoreHaptics
 
     SOURCES += streaming/audio/dualsensehapticsmac.mm
     HEADERS += streaming/audio/dualsensehapticsmac.h
 
-    # For libsoundio and the physical DualSense haptics endpoint
+    # For libsoundio, the CoreAudio renderer and the physical DualSense haptics endpoint
     LIBS += -framework CoreAudio -framework AudioUnit -framework AudioToolbox
 
     CONFIG += ffmpeg soundio
@@ -510,6 +520,19 @@ libplacebo {
         SOURCES += streaming/video/ffmpeg-renderers/plvk_objc.mm
     }
 }
+pyrowave:!config_pyrowave {
+    warning(AlkaidLab PyroWave high-bit-depth and color metadata API not found; PyroWave decoder disabled)
+    CONFIG -= pyrowave
+}
+pyrowave:libplacebo:ffmpeg:!config_SL {
+    message(PyroWave decoder enabled)
+
+    CONFIG += link_pkgconfig
+    PKGCONFIG += pyrowave-shared
+    DEFINES += HAVE_PYROWAVE
+    SOURCES += streaming/video/pyrowave.cpp
+    HEADERS += streaming/video/pyrowave.h streaming/video/pyrowavecolor.h
+}
 config_EGL {
     message(EGL renderer selected)
 
@@ -576,14 +599,20 @@ win32:!winrt {
     INCLUDEPATH += $$PWD/../third-party/AMF/amf
 }
 macx {
-    message(VideoToolbox renderer selected)
+    message(CoreAudio and VideoToolbox renderers selected)
+
+    DEFINES += HAVE_COREAUDIO
 
     SOURCES += \
+        streaming/audio/renderers/coreaudio.cpp \
+        streaming/audio/renderers/coreaudiospatial.cpp \
         streaming/video/ffmpeg-renderers/vt_base.mm \
         streaming/video/ffmpeg-renderers/vt_avsamplelayer.mm \
         streaming/video/ffmpeg-renderers/vt_metal.mm
 
     HEADERS += \
+        streaming/audio/renderers/coreaudio.h \
+        streaming/audio/renderers/coreaudiospatial.h \
         streaming/video/ffmpeg-renderers/vt.h
 }
 discord-rpc {
