@@ -107,6 +107,9 @@ private:
     dispatch_queue_t m_ListenerQueue;
     AudioObjectPropertyListenerBlock m_ListenerBlock;
 
+    // The device's buffer size before we changed it, or 0 if we didn't
+    UInt32 m_OriginalBufferFrames;
+
     UInt32 m_FrameSize;
     UInt32 m_MaxFrames;
     std::vector<unsigned char> m_PacketBuffer;

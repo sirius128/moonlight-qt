@@ -179,7 +179,8 @@ CoreAudioRenderer::CoreAudioRenderer()
       m_ListenerBlock(Block_copy(^(UInt32, const AudioObjectPropertyAddress*) {
         m_NeedsReinit = true;
       })),
-      m_FrameSize(0), m_MaxFrames(0), m_Starved(true), m_SpatialMixer(nullptr)
+      m_OriginalBufferFrames(0), m_FrameSize(0), m_MaxFrames(0), m_Starved(true),
+      m_SpatialMixer(nullptr)
 {
 }
 
@@ -190,6 +191,15 @@ CoreAudioRenderer::~CoreAudioRenderer()
         AudioOutputUnitStop(m_OutputUnit);
         AudioUnitUninitialize(m_OutputUnit);
         AudioComponentInstanceDispose(m_OutputUnit);
+    }
+
+    // Give the device back the buffer size it had before we asked for ours
+    if (m_OriginalBufferFrames != 0) {
+        AudioObjectPropertyAddress addr{ kAudioDevicePropertyBufferFrameSize,
+                                         kAudioObjectPropertyScopeOutput,
+                                         kAudioObjectPropertyElementMain };
+        AudioObjectSetPropertyData(m_OutputDevice, &addr, 0, nullptr,
+                                   sizeof(m_OriginalBufferFrames), &m_OriginalBufferFrames);
     }
 
     removeListeners();
@@ -260,13 +270,17 @@ bool CoreAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION*
     }
 
     // Ask for a device buffer of one packet to keep latency down. The device
-    // may not allow it, which only costs latency.
+    // may not allow it, which only costs latency. The destructor puts the old
+    // size back, including after a capability probe or a failed setup.
     Float64 deviceRate = 0.0;
     AudioValueRange range = {};
+    UInt32 originalFrames = 0;
     if (getDeviceProperty(m_OutputDevice, kAudioDevicePropertyNominalSampleRate,
                           kAudioObjectPropertyScopeGlobal, deviceRate) &&
         getDeviceProperty(m_OutputDevice, kAudioDevicePropertyBufferFrameSizeRange,
-                          kAudioObjectPropertyScopeOutput, range)) {
+                          kAudioObjectPropertyScopeOutput, range) &&
+        getDeviceProperty(m_OutputDevice, kAudioDevicePropertyBufferFrameSize,
+                          kAudioObjectPropertyScopeOutput, originalFrames)) {
         Float64 packetFrames = opusConfig->samplesPerFrame * deviceRate / opusConfig->sampleRate;
         UInt32 bufferFrames = (UInt32)qBound(range.mMinimum, packetFrames, range.mMaximum);
         AudioObjectPropertyAddress addr{ kAudioDevicePropertyBufferFrameSize,
@@ -276,6 +290,8 @@ bool CoreAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION*
                                        &bufferFrames) != noErr) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                         "Unable to set the audio device buffer to %u frames", bufferFrames);
+        } else if (bufferFrames != originalFrames) {
+            m_OriginalBufferFrames = originalFrames;
         }
     }
 
