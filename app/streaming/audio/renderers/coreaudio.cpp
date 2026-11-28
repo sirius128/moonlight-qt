@@ -38,6 +38,15 @@ constexpr AudioObjectPropertyAddress DeviceAddresses[] = {
       kAudioObjectPropertyElementMain },
 };
 
+// The output unit's maximum frames per callback follows from these, and it
+// won't render more than that
+constexpr AudioObjectPropertyAddress SizingAddresses[] = {
+    { kAudioDevicePropertyBufferFrameSize, kAudioDevicePropertyScopeOutput,
+      kAudioObjectPropertyElementMain },
+    { kAudioDevicePropertyNominalSampleRate, kAudioObjectPropertyScopeGlobal,
+      kAudioObjectPropertyElementMain },
+};
+
 template <typename T>
 bool getDeviceProperty(AudioObjectID object, AudioObjectPropertySelector selector,
                        AudioObjectPropertyScope scope, T& out)
@@ -342,6 +351,12 @@ bool CoreAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION*
         return false;
     }
 
+    // Only once started, so whatever the output unit itself changes doesn't count
+    for (const AudioObjectPropertyAddress& addr : SizingAddresses) {
+        AudioObjectAddPropertyListenerBlock(m_OutputDevice, &addr, m_ListenerQueue,
+                                            m_ListenerBlock);
+    }
+
     SDL_LogInfo(
         SDL_LOG_CATEGORY_APPLICATION,
         "CoreAudio output: %s (%u channels, %u speakers, output type %u), %s for %d-channel stream",
@@ -415,6 +430,10 @@ void CoreAudioRenderer::removeListeners()
                                            m_ListenerQueue, m_ListenerBlock);
     if (m_OutputDevice != kAudioObjectUnknown) {
         for (const AudioObjectPropertyAddress& addr : DeviceAddresses) {
+            AudioObjectRemovePropertyListenerBlock(m_OutputDevice, &addr, m_ListenerQueue,
+                                                   m_ListenerBlock);
+        }
+        for (const AudioObjectPropertyAddress& addr : SizingAddresses) {
             AudioObjectRemovePropertyListenerBlock(m_OutputDevice, &addr, m_ListenerQueue,
                                                    m_ListenerBlock);
         }
