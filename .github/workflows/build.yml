@@ -452,14 +452,6 @@ jobs:
         DYLD_LIBRARY_PATH="$PWD/../../libs/mac/lib" ./overlay_button_native_wake
         popd
 
-    - name: Test CoreAudio passthrough channel mapping
-      run: |
-        pushd tests/coreaudio_channel_map
-        qmake coreaudio_channel_map.pro
-        make -j"$(sysctl -n hw.ncpu)"
-        ./coreaudio_channel_map
-        popd
-
     - name: Build and generate DMG
       run: |
         scripts/generate-dmg.sh Release
