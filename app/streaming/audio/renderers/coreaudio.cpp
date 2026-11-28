@@ -1,5 +1,4 @@
 #include "coreaudio.h"
-#include "coreaudiochannelmap.h"
 
 #include "settings/streamingpreferences.h"
 
@@ -83,102 +82,50 @@ UInt32 outputChannelCount(AudioDeviceID device)
     return channels;
 }
 
-// The label of each of the device's outputs, from the speaker layout the user
-// set up in Audio MIDI Setup. Outputs without a speaker are Unused, and a
-// device nobody has set up has only Unknown labels.
-std::vector<AudioChannelLabel> outputChannelLabels(AudioDeviceID device, UInt32 channelCount)
+// The number of speakers the user set up for the device in Audio MIDI Setup,
+// which can be fewer than its channels. An audio interface with 8 outputs is
+// usually driving a pair of stereo speakers.
+UInt32 outputSpeakerCount(AudioDeviceID device, UInt32 channelCount)
 {
-    std::vector<AudioChannelLabel> labels(channelCount, kAudioChannelLabel_Unknown);
-
     AudioObjectPropertyAddress addr{ kAudioDevicePropertyPreferredChannelLayout,
                                      kAudioDevicePropertyScopeOutput,
                                      kAudioObjectPropertyElementMain };
     UInt32 size = 0;
     if (AudioObjectGetPropertyDataSize(device, &addr, 0, nullptr, &size) != noErr ||
         size < offsetof(AudioChannelLayout, mChannelDescriptions)) {
-        return labels;
+        return qMin(channelCount, 2U);
     }
 
     std::vector<unsigned char> storage(size);
     auto layout = reinterpret_cast<AudioChannelLayout*>(storage.data());
     if (AudioObjectGetPropertyData(device, &addr, 0, nullptr, &size, layout) != noErr) {
-        return labels;
+        return qMin(channelCount, 2U);
     }
 
-    // Spell out a layout given as a tag or a bitmap
-    if (layout->mChannelLayoutTag != kAudioChannelLayoutTag_UseChannelDescriptions) {
-        AudioChannelLayoutTag tag = layout->mChannelLayoutTag;
-        AudioChannelBitmap bitmap = layout->mChannelBitmap;
-        bool useBitmap = tag == kAudioChannelLayoutTag_UseChannelBitmap;
-        AudioFormatPropertyID property = useBitmap ? kAudioFormatProperty_ChannelLayoutForBitmap
-                                                   : kAudioFormatProperty_ChannelLayoutForTag;
-        const void* specifier = useBitmap ? (const void*)&bitmap : &tag;
-        UInt32 specifierSize = useBitmap ? sizeof(bitmap) : sizeof(tag);
-
-        if (AudioFormatGetPropertyInfo(property, specifierSize, specifier, &size) != noErr ||
-            size < offsetof(AudioChannelLayout, mChannelDescriptions)) {
-            return labels;
-        }
-        storage.assign(size, 0);
-        layout = reinterpret_cast<AudioChannelLayout*>(storage.data());
-        if (AudioFormatGetProperty(property, specifierSize, specifier, &size, layout) != noErr) {
-            return labels;
-        }
-    }
-
-    UInt32 descriptions =
-        qMin(layout->mNumberChannelDescriptions,
-             (UInt32)((size - offsetof(AudioChannelLayout, mChannelDescriptions)) /
-                      sizeof(AudioChannelDescription)));
-    for (UInt32 i = 0; i < qMin(descriptions, channelCount); i++) {
-        labels[i] = layout->mChannelDescriptions[i].mChannelLabel;
-    }
-    return labels;
-}
-
-// The number of speakers the user set up for the device in Audio MIDI Setup,
-// which can be fewer than its channels. An audio interface with 8 outputs is
-// usually driving a pair of stereo speakers.
-UInt32 outputSpeakerCount(const std::vector<AudioChannelLabel>& labels)
-{
     UInt32 speakers = 0;
-    for (AudioChannelLabel label : labels) {
-        if (label != kAudioChannelLabel_Unknown && label != kAudioChannelLabel_Unused) {
-            speakers++;
+    if (layout->mChannelLayoutTag == kAudioChannelLayoutTag_UseChannelDescriptions) {
+        UInt32 descriptions =
+            qMin(layout->mNumberChannelDescriptions,
+                 (UInt32)((size - offsetof(AudioChannelLayout, mChannelDescriptions)) /
+                          sizeof(AudioChannelDescription)));
+        for (UInt32 i = 0; i < descriptions; i++) {
+            AudioChannelLabel label = layout->mChannelDescriptions[i].mChannelLabel;
+            if (label != kAudioChannelLabel_Unknown && label != kAudioChannelLabel_Unused) {
+                speakers++;
+            }
         }
+    } else if (layout->mChannelLayoutTag == kAudioChannelLayoutTag_UseChannelBitmap) {
+        speakers = (UInt32)__builtin_popcount(layout->mChannelBitmap);
+    } else {
+        speakers = AudioChannelLayoutTag_GetNumberOfChannels(layout->mChannelLayoutTag);
     }
 
     // A device nobody has set up has no labels. macOS plays stereo on those.
     if (speakers == 0) {
         speakers = 2;
     }
-    return qMin(speakers, (UInt32)labels.size());
+    return qMin(speakers, channelCount);
 }
-
-// coreaudiochannelmap.h can't include the SDK headers, so it has its own copy
-// of the labels it knows
-static_assert(
-    CoreAudioChannelMap::Unknown == kAudioChannelLabel_Unknown &&
-        CoreAudioChannelMap::Unused == kAudioChannelLabel_Unused &&
-        CoreAudioChannelMap::Left == kAudioChannelLabel_Left &&
-        CoreAudioChannelMap::Right == kAudioChannelLabel_Right &&
-        CoreAudioChannelMap::Center == kAudioChannelLabel_Center &&
-        CoreAudioChannelMap::LFEScreen == kAudioChannelLabel_LFEScreen &&
-        CoreAudioChannelMap::LeftSurround == kAudioChannelLabel_LeftSurround &&
-        CoreAudioChannelMap::RightSurround == kAudioChannelLabel_RightSurround &&
-        CoreAudioChannelMap::LeftSurroundDirect == kAudioChannelLabel_LeftSurroundDirect &&
-        CoreAudioChannelMap::RightSurroundDirect == kAudioChannelLabel_RightSurroundDirect &&
-        CoreAudioChannelMap::VerticalHeightLeft == kAudioChannelLabel_VerticalHeightLeft &&
-        CoreAudioChannelMap::VerticalHeightRight == kAudioChannelLabel_VerticalHeightRight &&
-        CoreAudioChannelMap::TopBackLeft == kAudioChannelLabel_TopBackLeft &&
-        CoreAudioChannelMap::TopBackRight == kAudioChannelLabel_TopBackRight &&
-        CoreAudioChannelMap::RearSurroundLeft == kAudioChannelLabel_RearSurroundLeft &&
-        CoreAudioChannelMap::RearSurroundRight == kAudioChannelLabel_RearSurroundRight &&
-        CoreAudioChannelMap::LeftTopMiddle == kAudioChannelLabel_LeftTopMiddle &&
-        CoreAudioChannelMap::RightTopMiddle == kAudioChannelLabel_RightTopMiddle &&
-        CoreAudioChannelMap::LeftTopRear == kAudioChannelLabel_LeftTopRear &&
-        CoreAudioChannelMap::RightTopRear == kAudioChannelLabel_RightTopRear,
-    "CoreAudioChannelMap labels must match AudioChannelLabel");
 
 // The host sends WAVE channel order: FL FR FC LFE BL BR SL SR (TFL TFR TBL TBR).
 // WAVE_5_1_B and WAVE_7_1 describe it, but there's no WAVE tag for 7.1.4, so
@@ -278,9 +225,7 @@ bool CoreAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION*
     }
 
     UInt32 deviceChannels = outputChannelCount(m_OutputDevice);
-    std::vector<AudioChannelLabel> deviceLabels =
-        outputChannelLabels(m_OutputDevice, deviceChannels);
-    UInt32 deviceSpeakers = outputSpeakerCount(deviceLabels);
+    UInt32 deviceSpeakers = outputSpeakerCount(m_OutputDevice, deviceChannels);
     AUSpatialMixerOutputType outputType = getSpatialMixerOutputType();
 
     // Surround is spatialized for stereo headphones and built-in speakers.
@@ -300,29 +245,6 @@ bool CoreAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION*
     }
 
     std::vector<unsigned char> layout = streamChannelLayout(opusConfig->channelCount);
-
-    // Send each channel to its speaker ourselves. Given the stream layout,
-    // AUHAL routes by label too, but silently drops any channel whose label
-    // the device doesn't use exactly, such as the surround pair on speakers
-    // set up as 5.1 or the top back pair on speakers labeled top back.
-    std::vector<SInt32> channelMap;
-    if (!spatial && opusConfig->channelCount > 2) {
-        if (!CoreAudioChannelMap::build(deviceLabels,
-                                        CoreAudioChannelMap::streamLabels(opusConfig->channelCount),
-                                        channelMap)) {
-            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                        "The output device's speakers don't match the %d-channel stream",
-                        opusConfig->channelCount);
-            return false;
-        }
-
-        QString map;
-        for (SInt32 channel : channelMap) {
-            map += QString::number(channel) + ' ';
-        }
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "CoreAudio channel map: %s",
-                    qUtf8Printable(map.trimmed()));
-    }
 
     m_FrameSize = opusConfig->channelCount * sizeof(float);
 
@@ -375,18 +297,13 @@ bool CoreAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION*
     OSStatus status = AudioUnitSetProperty(m_OutputUnit, kAudioUnitProperty_StreamFormat,
                                            kAudioUnitScope_Input, 0, &asbd, sizeof(asbd));
 
-    // The map goes on the side we feed, like the stream format, and has an
-    // entry for each of the device's outputs. It replaces the stream layout,
-    // so AUHAL doesn't route the channels a second time. Stereo is left as
-    // it was.
-    if (status == noErr && !channelMap.empty()) {
-        status = AudioUnitSetProperty(m_OutputUnit, kAudioOutputUnitProperty_ChannelMap,
-                                      kAudioUnitScope_Input, 0, channelMap.data(),
-                                      (UInt32)(channelMap.size() * sizeof(SInt32)));
-    } else if (status == noErr && !spatial && !layout.empty() &&
-               AudioUnitSetProperty(m_OutputUnit, kAudioUnitProperty_AudioChannelLayout,
-                                    kAudioUnitScope_Input, 0, layout.data(),
-                                    (UInt32)layout.size()) != noErr) {
+    // Let AUHAL route each channel to the matching speaker of the device's
+    // layout. Without it, channels go to the device's channels in order.
+    // The layout is rejected unless the format already has as many channels.
+    if (status == noErr && !spatial && !layout.empty() &&
+        AudioUnitSetProperty(m_OutputUnit, kAudioUnitProperty_AudioChannelLayout,
+                             kAudioUnitScope_Input, 0, layout.data(),
+                             (UInt32)layout.size()) != noErr) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                     "Unable to set the CoreAudio output channel layout");
     }
